@@ -23,27 +23,18 @@ attestation check. Its version is pinned equal to `package.json`'s
 
 CI is Linux and has no GPU, so the semantic tests skip -- see below.
 
-`setup` deletes its build tree when it finishes. Building the fork leaves
-473MB behind -- 345MB of it the llama.cpp submodule's git objects, which
-`--depth 1` barely dents -- to produce a 3.2MB dylib, and a rebuild from
-nothing is a minute. `SPIREWEB_KEEP_SRC=1` keeps it for working on the
-extension itself.
+`setup` deletes its build tree when it finishes: building the fork leaves
+473MB behind to produce a 3.2MB dylib, and a rebuild from nothing is a minute.
+`SPIREWEB_KEEP_SRC=1` keeps it for working on the extension itself.
 
 ## sqlite3.h
 
 `sqlite-vec`'s cgo bindings compile with `-DSQLITE_CORE` and `#include
 "sqlite3.h"`, taking struct layouts from whatever header the preprocessor
-finds. That is not the library being linked:
-
-| | |
-| --- | --- |
-| macOS SDK | 3.51.0 |
-| debian bookworm | 3.40.1 |
-| **actually linked** | **3.53.4** (go-sqlite3's amalgamation) |
-
-Older header against newer library is the direction SQLite supports, so this
-worked -- but the header was an unpinned input that varied per machine, and
-that class of mismatch corrupts structs rather than failing to compile.
+finds -- which is not the library being linked, that being go-sqlite3's
+amalgamation and newer than either the macOS SDK's header or debian's. The
+header was an unpinned input that varied per machine, and that class of
+mismatch corrupts structs rather than failing to compile.
 
 `mise run sqlite-header` copies the header go-sqlite3 ships for its own
 amalgamation into `third_party/sqlite/`, and `CGO_CFLAGS` points there. It is
@@ -68,6 +59,17 @@ The usual cause of that failure is no reachable GPU, not a bad file. On macOS
 llama.cpp needs a Metal device, which a sandbox or headless CI runner lacks.
 The extension still loads and `lembed_version()` still answers, so the only
 honest test of "is semantic search working" is opening a connection.
+
+**The first connection compiles llama.cpp's Metal shaders: about 15 seconds**,
+and it is not paid once. macOS caches the result under
+`/var/folders/.../C/com.apple.metal` and evicts it on its own schedule; there
+were three generations a week apart on one machine. It is caused by
+`-DGGML_METAL_EMBED_LIBRARY=ON`, which is also what makes the dylib relocatable
+and therefore shippable. `noteSlowModelLoad` says so after a two second grace
+rather than before every load, because the warm case is overwhelmingly common.
+Removing the cost rather than narrating it means building with the flag off and
+shipping a precompiled `.metallib` -- unmeasured, and it trades away the
+single-file property.
 
 ## Connections
 
@@ -181,7 +183,7 @@ for someone who has a key and has been getting them.
 XDG, not `~/Library/Application Support`, matching `SPIREWEB_DATA_DIR` and
 `embed.DefaultPaths`.
 
-## Data
+## Storage
 
 - `chunks.id` is `AUTOINCREMENT`. A plain `INTEGER PRIMARY KEY` reuses rowids
   freed by `DELETE`, and `chunks_vec` is keyed by chunk id, so a recycled id
@@ -200,7 +202,7 @@ XDG, not `~/Library/Application Support`, matching `SPIREWEB_DATA_DIR` and
   this: 800 chars of prose is 162 tokens, 800 chars of dense JSON is 802.
 - `Chunk` splits only on rune boundaries. Invalid UTF-8 crashed the extension.
 
-## The archive
+### The archive
 
 `messages` holds every message of every session as its agent wrote it, and is
 the one table that is not derived from something else: chunks, vectors, and titles can
@@ -364,7 +366,7 @@ filters the fused results, and without it quoting visibly fails to do the one
 thing it promises. There is a test with a deliberately ignorant ranker for
 exactly this.
 
-Three things that are true and worth not rediscovering:
+Four things that are true and worth not rediscovering:
 
 - Exact means exact **modulo stemming**: the tokenizer is `porter`, so
   `"deploying pipelines"` matches "deploy pipeline". Byte-exact needs a second
@@ -422,22 +424,21 @@ settle first. "Not indexed yet" and "never indexed" look identical, so an
 assertion made immediately after some other file appears passes whether or not
 the code works -- one did, once, before the sleep was added.
 
-## Browser tests
+### Browser tests
 
 `mise run e2e` drives Chromium through Playwright. Not part of `mise run
 check`: it is ~7s against check's ~20s but needs a browser that is not a
 repository dependency, and a failure there is a different kind of signal.
 
-`mise run e2e-install` fetches that browser, once. The `@playwright/test`
-version is pinned to `~1.58`, whose browser revision is **chromium-1208**,
-because that build was already in the shared cache -- a minor bump is a 130MB
-download, so it is worth knowing that is what changed. Playwright says what to
-run when the build is missing.
+`mise run e2e-install` fetches that browser, once. `@playwright/test` is pinned
+to `~1.58`, whose browser revision is **chromium-1208**, because that build was
+already in the shared cache -- a minor bump is a 130MB download, so it is worth
+knowing that is what changed.
 
 Playwright starts the server itself, through `e2e/serve.sh`, which compiles
-`app.js` (embedded, generated, so a stale one means testing the previous
-keyboard handling), builds the binary, and indexes `e2e/sessions` into a temp
-database. The fixtures are committed for a reason: the tests assert which
+`app.js` (a stale one means testing the previous keyboard handling), builds the
+binary, and indexes `e2e/sessions` into a temp database. The fixtures are
+committed for a reason: the tests assert which
 session is newest and how many rows a filter leaves, and neither survives
 contact with a real corpus. `e2e-charlie` is 41 messages with one occurrence of
 "quicksand" at the end, so the scroll-to-match test starts below the fold.
@@ -478,19 +479,32 @@ in `.goreleaser.yaml` clears both; notarization would be the real fix.
 Pushing the cask needs `HOMEBREW_TAP_TOKEN`, a PAT secret on this repo.
 `GITHUB_TOKEN` cannot push to the tap.
 
-## Metal shaders
+## Planning
 
-The first connection through the semantic driver makes llama.cpp compile its
-Metal shaders: **about 15 seconds**, and it is not paid once. macOS caches the
-result under `/var/folders/.../C/com.apple.metal` and evicts it on its own
-schedule; there were three generations a week apart on one machine. It is
-caused by `-DGGML_METAL_EMBED_LIBRARY=ON`, which is also what makes the dylib
-relocatable and therefore shippable.
+Milestones are GitHub milestones, numbered `M1`..`Mn`, each with a one-line
+description of what is in scope. They are worked roughly in order, and the
+number is how a body of work gets referred to in conversation.
 
-`noteSlowModelLoad` says so after a two second grace rather than before every
-load, because the warm case is overwhelmingly common. Removing the cost rather
-than narrating it means building with the flag off and shipping a precompiled
-`.metallib` -- unmeasured, and it trades away the single-file property.
+Issues carry the reasoning at length, the way commit bodies do. An issue is
+usually where a design argument gets written *first* -- it then ends up in a
+commit body, and often in this file. Recording the option that was rejected
+and why is most of the value, because that is the question asked again six
+months later.
+
+Titles are either a problem statement -- "The watcher can miss the first
+session in a brand-new project directory" -- or an imperative -- "Ship the
+extension and model through Homebrew". Both say what is wrong or what should
+exist, not which file to edit.
+
+Measurements belong in the issue, taken rather than guessed. #26 estimated
+~81MB of message JSON; #37 measured 265MB and said so, which is what made the
+cost of the archive arguable instead of assumed.
+
+An issue too big to do at once gets broken down, and the parent keeps the
+list -- #26 is a sketch plus a breakdown into #37--#41, and is not itself work.
+
+Milestones do the grouping. No labels are in use, and nothing needs them at
+this size.
 
 ## Commits
 
@@ -516,8 +530,8 @@ Run `aver` after editing a workflow; it reports outdated action versions.
 ## Corpus
 
 **pi**: 1190 files, 258MB, median 95KB, p90 567KB, max 7.2MB; 48k chunks.
-Lexical index build ~9.5s cold with the archive, ~55ms when one session
-changed. Useful for judging whether an approach scales.
+Useful for judging whether an approach scales; build timings are in "The
+archive" above.
 
 **Claude Code**: 1617 files, 284MB -- but only **17 files and 1MB** of it is
 conversation this repository does not already have. The rest is excluded as SDK
