@@ -135,8 +135,25 @@ func TestArchiveIsIncremental(t *testing.T) {
 	}
 }
 
-// A file truncated mid-write must not leave rows claiming messages the
-// session no longer has.
+// rewriteS1 replaces s1's file with the given messages and bumps its mtime so
+// the next build looks at it.
+func rewriteS1(t *testing.T, dir string, msgs ...string) {
+	t.Helper()
+	p := filepath.Join(dir, "--Users-me-code-proj--", "s1.jsonl")
+	body := `{"type":"session","version":3,"id":"s1","timestamp":"2026-03-31T12:26:01.076Z","cwd":"/Users/me/code/proj"}` + "\n"
+	for _, m := range msgs {
+		body += m + "\n"
+	}
+	if err := os.WriteFile(p, []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chtimes(p, time.Now(), time.Now().Add(time.Second)); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// A file rewritten to a different, shorter conversation must not leave rows
+// claiming messages the session no longer has.
 func TestArchiveDropsMessagesThatWentAway(t *testing.T) {
 	dir := writeCorpus(t, map[string][]string{
 		"s1": {userMsg("first"), userMsg("second"), userMsg("third")},
@@ -149,25 +166,46 @@ func TestArchiveDropsMessagesThatWentAway(t *testing.T) {
 		t.Fatalf("archived = %d, want 3", n)
 	}
 
-	// Rewrite it shorter.
-	p := filepath.Join(dir, "--Users-me-code-proj--", "s1.jsonl")
-	short := `{"type":"session","version":3,"id":"s1","timestamp":"2026-03-31T12:26:01.076Z","cwd":"/Users/me/code/proj"}` +
-		"\n" + userMsg("first") + "\n"
-	if err := os.WriteFile(p, []byte(short), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Chtimes(p, time.Now(), time.Now().Add(time.Second)); err != nil {
-		t.Fatal(err)
-	}
+	rewriteS1(t, dir, userMsg("something else entirely"))
 	if _, err := Build(context.Background(), db, BuildOptions{Dirs: []string{dir}}); err != nil {
 		t.Fatal(err)
 	}
 	if n := archivedCount(t, db, "s1"); n != 1 {
-		t.Errorf("archived = %d, want 1 after the file shrank", n)
+		t.Errorf("archived = %d, want 1 after the file was rewritten shorter", n)
 	}
 }
 
-// Deleting a session takes its messages with it: the foreign key cascades,
+// A file that became a prefix of its archive has lost messages the archive
+// still has -- because it was truncated, or because a longer copy was merged
+// in from another machine. Those rows are the archive doing its job.
+func TestArchiveKeepsMessagesTheFileLost(t *testing.T) {
+	dir := writeCorpus(t, map[string][]string{
+		"s1": {userMsg("first"), userMsg("second"), userMsg("third")},
+	})
+	db := openTest(t)
+	if _, err := Build(context.Background(), db, BuildOptions{Dirs: []string{dir}}); err != nil {
+		t.Fatal(err)
+	}
+
+	rewriteS1(t, dir, userMsg("first"))
+	if _, err := Build(context.Background(), db, BuildOptions{Dirs: []string{dir}}); err != nil {
+		t.Fatal(err)
+	}
+	if n := archivedCount(t, db, "s1"); n != 3 {
+		t.Errorf("archived = %d, want 3: the file is a prefix of the archive", n)
+	}
+	// And the session describes what the archive holds, which is what doctor
+	// checks n_msgs against.
+	var nMsgs int
+	if err := db.SQL().QueryRow(`SELECT n_msgs FROM sessions WHERE id = 's1'`).Scan(&nMsgs); err != nil {
+		t.Fatal(err)
+	}
+	if nMsgs != 3 {
+		t.Errorf("n_msgs = %d, want 3", nMsgs)
+	}
+}
+
+// Excluding a session takes its messages with it: the foreign key cascades,
 // unlike the FTS and vector tables.
 func TestArchiveCascadesWithTheSession(t *testing.T) {
 	dir := writeCorpus(t, map[string][]string{"s1": {userMsg("first")}})
@@ -175,9 +213,7 @@ func TestArchiveCascadesWithTheSession(t *testing.T) {
 	if _, err := Build(context.Background(), db, BuildOptions{Dirs: []string{dir}}); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.Remove(filepath.Join(dir, "--Users-me-code-proj--", "s1.jsonl")); err != nil {
-		t.Fatal(err)
-	}
+	rewriteS1(t, dir) // header only: excluded as empty
 	if _, err := Build(context.Background(), db, BuildOptions{Dirs: []string{dir}}); err != nil {
 		t.Fatal(err)
 	}

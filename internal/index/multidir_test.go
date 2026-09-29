@@ -25,8 +25,8 @@ func installSession(t *testing.T, dir, id, text string) {
 }
 
 // The reason Dirs is a slice rather than Build being called once per directory:
-// Build removes every indexed session it did not see, so a build per root would
-// have each one delete the other's.
+// Build treats every indexed session it did not see as having no file, so a
+// build per root would have each one demote the other's to archive-only.
 func TestBuildIndexesSeveralDirectoriesAsOneCorpus(t *testing.T) {
 	piDir := writeCorpus(t, map[string][]string{"pi-1": {userMsg("a pi session")}})
 	ccDir := t.TempDir()
@@ -58,9 +58,11 @@ func TestBuildIndexesSeveralDirectoriesAsOneCorpus(t *testing.T) {
 	}
 }
 
-// Sessions from a directory that is no longer listed are dropped, which is the
-// same sweep and has to keep working.
-func TestBuildDropsSessionsFromARemovedDirectory(t *testing.T) {
+// Sessions from a directory that is no longer listed are kept. Unlisting a
+// directory says "stop watching this", not "forget what it held", and taking
+// it literally would make one `spireweb index --dir somewhere-else` against the
+// real index delete the archive of everything else.
+func TestBuildKeepsSessionsFromARemovedDirectory(t *testing.T) {
 	piDir := writeCorpus(t, map[string][]string{"pi-1": {userMsg("a pi session")}})
 	ccDir := t.TempDir()
 	writeClaudeSession(t, ccDir, "cc-1", "cli", "a claude code session")
@@ -78,8 +80,8 @@ func TestBuildDropsSessionsFromARemovedDirectory(t *testing.T) {
 	if !got["pi-1"] {
 		t.Error("the listed directory's session was dropped")
 	}
-	if got["cc-1"] {
-		t.Error("a session from an unlisted directory stayed in the index")
+	if !got["cc-1"] {
+		t.Error("a session from an unlisted directory was dropped with its archive")
 	}
 }
 

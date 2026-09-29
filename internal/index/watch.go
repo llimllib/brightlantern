@@ -237,11 +237,10 @@ func (w *Watcher) reindex(ctx context.Context, paths []string) (int, error) {
 		}
 		fi, err := os.Stat(p)
 		if err != nil {
-			// Deleted: drop it from the index.
+			// Deleted: nothing to do. The session stays, with the archive as
+			// its source, which is the same decision Build's sweep makes and
+			// the reason there is an archive.
 			if os.IsNotExist(err) {
-				if derr := w.db.deleteByPath(p); derr != nil {
-					return chunks, derr
-				}
 				continue
 			}
 			return chunks, err
@@ -260,7 +259,7 @@ func (w *Watcher) reindex(ctx context.Context, paths []string) (int, error) {
 		// a candidate for titling, which writes another.
 		//
 		// Deleted rather than skipped: Build leaves that to its sweep over
-		// everything it did not see, and the watcher has no such sweep. Doing it
+		// everything it excluded, and the watcher has no such sweep. Doing it
 		// here also means a file indexed before the rule reached it is cleaned
 		// up the next time it changes, rather than waiting for --full.
 		if session.SkipReason(p) != "" {

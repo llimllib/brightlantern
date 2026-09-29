@@ -117,14 +117,24 @@ func TestWatcherAppendReusesChunks(t *testing.T) {
 	}
 }
 
-func TestWatcherRemovesDeletedSession(t *testing.T) {
+// A deleted file leaves its session in place, the same as Build does.
+//
+// Asserting that something did not happen needs a later event to wait for, or
+// the assertion passes before the watcher has looked: the second file is that
+// event, and it lands behind the deletion.
+func TestWatcherKeepsDeletedSession(t *testing.T) {
 	dir := t.TempDir()
 	sub := filepath.Join(dir, "--Users-me-code-proj--")
 	os.MkdirAll(sub, 0o755)
 	p := filepath.Join(sub, "gone.jsonl")
-	body := strings.Replace(strings.Replace(hdr, "%s", "gone-1", 1), "%s", "proj", 1) +
-		"\n" + userMsg("temporary session") + "\n"
-	os.WriteFile(p, []byte(body), 0o644)
+	write := func(p, id, text string) {
+		body := strings.Replace(strings.Replace(hdr, "%s", id, 1), "%s", "proj", 1) +
+			"\n" + userMsg(text) + "\n"
+		if err := os.WriteFile(p, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write(p, "gone-1", "temporary session")
 
 	db := openTest(t)
 	ctx := context.Background()
@@ -144,10 +154,21 @@ func TestWatcherRemovesDeletedSession(t *testing.T) {
 	if err := os.Remove(p); err != nil {
 		t.Fatal(err)
 	}
-	waitFor(t, 10*time.Second, "the deleted session to be dropped", func() bool {
+	write(filepath.Join(sub, "later.jsonl"), "later-1", "a later session")
+	waitFor(t, 10*time.Second, "the later session to be indexed", func() bool {
 		st, err := db.Stats()
-		return err == nil && st.Sessions == 0 && st.Chunks == 0
+		return err == nil && st.Sessions >= 2
 	})
+	st, err := db.Stats()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if st.Sessions != 2 || st.Chunks != 2 {
+		t.Errorf("sessions=%d chunks=%d, want 2/2: the deleted session was dropped", st.Sessions, st.Chunks)
+	}
+	if n := archivedCount(t, db, "gone-1"); n != 1 {
+		t.Errorf("archived = %d, want 1", n)
+	}
 }
 
 // A project directory created after startup must be watched: starting pi in a

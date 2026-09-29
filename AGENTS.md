@@ -150,15 +150,15 @@ it runs over every candidate on a cold build.
 
 It is checked in `Build` *after* the mtime test, so an unchanged indexed session
 still costs a stat. The consequence is that a session indexed before it became
-excluded survives until `--full`; excluded files are deliberately not marked
-`seen`, so the deletion sweep is what removes them.
+excluded survives until `--full`; excluded files are recorded as such, and
+exclusion is the one thing the sweep deletes for.
 
 ## Directories and config
 
 `BuildOptions.Dirs` is a slice. It cannot be one `Build` per directory:
-`build.go` removes every indexed session it did not see, so two builds would
-have each root's sweep delete the other's. `Discover` takes them all and
-returns one deduplicated list.
+`build.go` treats every indexed session it did not see as having no file, so
+two builds would have each root demote the other's sessions to archive-only.
+`Discover` takes them all and returns one deduplicated list.
 
 With no `--dir`, `cmd` probes `$CLAUDE_CONFIG_DIR/projects`,
 `~/.config/claude/projects`, `~/.claude/projects`, `~/.pi/agent/sessions` and
@@ -243,6 +243,24 @@ and `TitleCandidates` keys on `title_msgs <> n_msgs` -- so a reindex of an
 unchanged file re-titles nothing. `reusableChunks` matches on chunk *content*,
 not on mtime, so unchanged chunks keep their row ids and their vectors and
 nothing is re-embedded. `--full` only bypasses the mtime skip.
+
+### The archive outlives the files
+
+**A session whose file is gone is kept**, by `Build`'s sweep and by the
+watcher alike, and so is one from a directory no longer listed. Only
+exclusions -- SDK files, empty sessions -- are deleted. Before this the sweep
+deleted anything it did not see, and `messages` cascaded with it, which made
+the archive exactly as durable as the session directory and deleted every
+merged session on the next build. It also meant one `spireweb index --dir
+somewhere-else` against the real index would wipe the rest of it. A session
+with no file still shows its metadata, and says its file is gone.
+
+**A file that is a prefix of its archive does not truncate it.**
+`archiveMessages` compares the file's last message to the row at that index:
+equal means the archive holds more (a longer copy merged in, or a truncated
+file) and the extra rows stay, with `n_msgs` set to the archive's count;
+different means a rewrite, and the extras go. Without the first half, `merge`'s
+"longer wins" would be undone the next time the shorter local file changed.
 
 After changing anything about indexing, both of these must return 0:
 

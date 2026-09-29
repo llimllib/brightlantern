@@ -130,7 +130,10 @@ func TestWatchIndexesNewSessions(t *testing.T) {
 	}
 }
 
-func TestWatchNoticesDeletedSessions(t *testing.T) {
+// A deleted file keeps its session: the archive is its source now. The second
+// session is what makes "still there" mean something, because it is indexed by
+// the same batch as the deletion or a later one.
+func TestWatchKeepsDeletedSessions(t *testing.T) {
 	dir := t.TempDir()
 	p := writeSession(t, dir, "aaa", "a doomed session")
 
@@ -146,9 +149,13 @@ func TestWatchNoticesDeletedSessions(t *testing.T) {
 	if err := os.Remove(p); err != nil {
 		t.Fatal(err)
 	}
-	waitFor(t, "the deletion to be indexed", 15*time.Second, func() bool {
-		return ix.Status().Sessions == 0
+	writeSession(t, dir, "bbb", "a later session")
+	waitFor(t, "the later session to be indexed", 15*time.Second, func() bool {
+		return ix.Status().Sessions >= 2
 	})
+	if n := ix.Status().Sessions; n != 2 {
+		t.Errorf("sessions = %d, want 2", n)
+	}
 }
 
 // A build failure has to leave the status readable rather than wedged as

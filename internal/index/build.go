@@ -73,7 +73,12 @@ type Embedder interface {
 //
 // A session is reindexed when its (mtime, size) differ from what is stored.
 // That is cheap and catches every real edit: pi appends to sessions, so any new
-// message changes both. Files that vanished are removed from the index.
+// message changes both.
+//
+// A session whose file vanished stays. The archive holds its messages and its
+// chunks stay searchable, which is the point of having an archive: it is not a
+// mirror of the session directory. Only sessions this run decided to exclude
+// are removed.
 func Build(ctx context.Context, d *DB, opts BuildOptions) (Progress, error) {
 	if len(opts.Dirs) == 0 {
 		opts.Dirs = []string{session.DefaultDir()}
@@ -145,6 +150,7 @@ func Build(ctx context.Context, d *DB, opts BuildOptions) (Progress, error) {
 
 	p := Progress{Total: len(files), Backfill: backfill, ArchiveBackfill: archiveBackfill}
 	seen := make(map[string]bool, len(files))
+	excluded := make(map[string]bool)
 
 	for _, f := range files {
 		if err := ctx.Err(); err != nil {
@@ -169,10 +175,11 @@ func Build(ctx context.Context, d *DB, opts BuildOptions) (Progress, error) {
 		// excluded keeps it until a full pass, which is the same bargain
 		// needsVectors and needsArchive make.
 		//
-		// Deliberately not marked seen: the sweep below then removes it, so a
+		// Marked excluded rather than seen, so the sweep below removes it: a
 		// session indexed before this rule existed is dropped rather than left
 		// behind with nothing to refresh it.
 		if session.SkipReason(f.Path) != "" {
+			excluded[f.Path] = true
 			p.Excluded++
 			report(p)
 			continue
@@ -194,10 +201,11 @@ func Build(ctx context.Context, d *DB, opts BuildOptions) (Progress, error) {
 		//
 		// Unmarked again, for the reason above -- but by hand, because seen is
 		// set before the parse. It has to be: a file that fails to parse must
-		// stay seen, or a session caught mid-write would be swept out of the
-		// index for being briefly unreadable.
+		// stay seen, because it is still there -- a session caught mid-write is
+		// briefly unreadable, not gone.
 		if session.SkipParsedReason(s) != "" {
 			delete(seen, f.Path)
+			excluded[f.Path] = true
 			p.Excluded++
 			report(p)
 			continue
@@ -213,9 +221,10 @@ func Build(ctx context.Context, d *DB, opts BuildOptions) (Progress, error) {
 		report(p)
 	}
 
-	// Drop sessions whose files are gone.
+	// Sessions this run did not see are either excluded, and removed, or have
+	// no file here, and are kept with the archive as their source.
 	for path := range known {
-		if !seen[path] {
+		if excluded[path] && !seen[path] {
 			if err := d.deleteByPath(path); err != nil {
 				return p, err
 			}
@@ -378,9 +387,19 @@ func (d *DB) upsertSession(ctx context.Context, s *session.Session, opts BuildOp
 	// After the session row, which the foreign key depends on, and inside the
 	// same transaction: a session whose chunks were written but whose messages
 	// were not would look archived and not be.
-	msgs, err = archiveMessages(ctx, tx, s)
+	var total int
+	msgs, total, err = archiveMessages(ctx, tx, s)
 	if err != nil {
 		return 0, 0, fmt.Errorf("archive: %w", err)
+	}
+	// The archive can hold more than the file: see archiveMessages. The count
+	// is the archive's, so that it describes what the session is rather than
+	// how much of it this machine still has on disk.
+	if total > len(s.Messages) {
+		if _, err := tx.ExecContext(ctx,
+			`UPDATE sessions SET n_msgs = ? WHERE id = ?`, total, s.ID); err != nil {
+			return 0, 0, err
+		}
 	}
 
 	if len(toInsert) == 0 {

@@ -141,8 +141,10 @@ func TestBuildDetectsChange(t *testing.T) {
 	}
 }
 
-// A deleted session file must leave no trace, including in the FTS index.
-func TestBuildRemovesDeleted(t *testing.T) {
+// A deleted session file leaves its session in the index, searchable, with the
+// archive as its source. The index is not a mirror of the session directory:
+// keeping what the directory no longer has is what the archive is for.
+func TestBuildKeepsSessionsWhoseFileWasDeleted(t *testing.T) {
 	dir := writeCorpus(t, map[string][]string{
 		"s1": {userMsg("keep this one")},
 		"s2": {userMsg("delete this unique_marker_xyz")},
@@ -154,6 +156,45 @@ func TestBuildRemovesDeleted(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := os.Remove(filepath.Join(dir, "--Users-me-code-proj--", "s2.jsonl")); err != nil {
+		t.Fatal(err)
+	}
+	for _, full := range []bool{false, true} {
+		if _, err := Build(ctx, db, BuildOptions{Dirs: []string{dir}, Full: full}); err != nil {
+			t.Fatal(err)
+		}
+		st, _ := db.Stats()
+		if st.Sessions != 2 || st.Chunks != 2 {
+			t.Errorf("full=%v: sessions=%d chunks=%d, want 2/2", full, st.Sessions, st.Chunks)
+		}
+		var n int
+		err := db.SQL().QueryRow(
+			`SELECT COUNT(*) FROM chunks_fts WHERE chunks_fts MATCH '"unique_marker_xyz"'`).Scan(&n)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if n != 1 {
+			t.Errorf("full=%v: FTS has %d row(s) for the archived session, want 1", full, n)
+		}
+	}
+}
+
+// Excluded sessions are the ones a build does remove, and they must leave no
+// trace, including in the FTS index.
+func TestBuildRemovesExcludedWithoutTrace(t *testing.T) {
+	dir := writeCorpus(t, map[string][]string{
+		"s1": {userMsg("keep this one")},
+		"s2": {userMsg("exclude this unique_marker_xyz")},
+	})
+	db := openTest(t)
+	ctx := context.Background()
+
+	if _, err := Build(ctx, db, BuildOptions{Dirs: []string{dir}}); err != nil {
+		t.Fatal(err)
+	}
+	// A header and nothing else: session.SkipEmpty.
+	p := filepath.Join(dir, "--Users-me-code-proj--", "s2.jsonl")
+	head := strings.Replace(strings.Replace(hdr, "%s", "s2", 1), "%s", "proj", 1)
+	if err := os.WriteFile(p, []byte(head+"\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := Build(ctx, db, BuildOptions{Dirs: []string{dir}}); err != nil {
@@ -174,7 +215,7 @@ func TestBuildRemovesDeleted(t *testing.T) {
 		t.Fatal(err)
 	}
 	if n != 0 {
-		t.Errorf("FTS index still has %d row(s) for the deleted session", n)
+		t.Errorf("FTS index still has %d row(s) for the excluded session", n)
 	}
 }
 
