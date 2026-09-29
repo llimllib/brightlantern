@@ -2,7 +2,12 @@ import { defineConfig, devices } from "@playwright/test";
 
 // Fixed rather than ephemeral: Playwright has to know the URL before the
 // server exists in order to wait for it.
-const port = Number(process.env.SPIREWEB_E2E_PORT ?? 8123);
+//
+// Not 8123, which this was: that is ClickHouse's HTTP port, and an ssh tunnel
+// to a ClickHouse server held it. With reuseExistingServer on, the whole suite
+// ran against ClickHouse's landing page and failed as if every selector had
+// broken.
+const port = Number(process.env.SPIREWEB_E2E_PORT ?? 18123);
 const baseURL = `http://127.0.0.1:${port}`;
 
 export default defineConfig({
@@ -30,7 +35,12 @@ export default defineConfig({
 
   webServer: {
     command: `./e2e/serve.sh ${port}`,
-    url: `${baseURL}/`,
+    // Readiness is judged by this URL answering, and so is "a server is
+    // already running" when reuseExistingServer is on. / is answered by
+    // anything listening on the port; app.js only by spireweb, so a stranger
+    // on the port is not mistaken for it and serve.sh fails loudly on the
+    // bind instead.
+    url: `${baseURL}/static/app.js`,
     // Reuse a server already on the port while developing; never in CI, where
     // a stale one would mean testing the wrong binary.
     reuseExistingServer: !process.env.CI,
