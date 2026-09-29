@@ -116,6 +116,40 @@ CREATE VIRTUAL TABLE IF NOT EXISTS chunks_fts USING fts5(
 CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
 `
 
+// views are recreated on every open rather than created if missing. A view
+// holds no data, so replacing one costs nothing, and it means an improved
+// definition reaches an existing index without a migration.
+//
+// tool_calls is what makes the archive a database someone can point sqlite3
+// at, rather than an exercise in json_extract: every tool call either agent
+// made, one row each, with its arguments as JSON. The two halves are the two
+// formats -- pi archives the message, whose content holds toolCall blocks
+// with arguments; Claude Code archives the whole record, whose message.content
+// holds tool_use blocks with input.
+//
+// The CASE is not decoration. json_each yields a string block as SQL text,
+// which json_extract rejects as malformed JSON, and SQLite does not promise to
+// test b.type first.
+const views = `
+DROP VIEW IF EXISTS tool_calls;
+CREATE VIEW tool_calls AS
+SELECT m.session_id, m.idx AS msg_idx, m.at,
+       json_extract(b.value, '$.id') AS call_id,
+       json_extract(b.value, '$.name') AS name,
+       json_extract(b.value, '$.arguments') AS arguments
+FROM messages m, json_each(m.content, '$.content') b
+WHERE m.role = 'assistant'
+  AND json_extract(CASE b.type WHEN 'object' THEN b.value END, '$.type') = 'toolCall'
+UNION ALL
+SELECT m.session_id, m.idx, m.at,
+       json_extract(b.value, '$.id'),
+       json_extract(b.value, '$.name'),
+       json_extract(b.value, '$.input')
+FROM messages m, json_each(m.content, '$.message.content') b
+WHERE m.role = 'assistant'
+  AND json_extract(CASE b.type WHEN 'object' THEN b.value END, '$.type') = 'tool_use';
+`
+
 // DB is an open search index.
 type DB struct {
 	sql  *sql.DB
@@ -264,6 +298,10 @@ func (d *DB) init() error {
 
 	if err := d.migrate(); err != nil {
 		return err
+	}
+
+	if _, err := d.sql.Exec(views); err != nil {
+		return fmt.Errorf("create views: %w", err)
 	}
 
 	got, err := d.Meta(MetaSchemaVersion)

@@ -55,6 +55,26 @@ are matched by id and the longer copy wins; titles come with them, so they are
 not paid for twice. A session whose two copies disagree is reported and left
 alone.
 
+It is a SQLite database, and `tool_calls` is a view over every tool call either
+agent made:
+
+```sql
+-- every session where you ran a command, newest first
+SELECT s.project, t.at, json_extract(t.arguments, '$.command')
+FROM tool_calls t JOIN sessions s ON s.id = t.session_id
+WHERE lower(t.name) = 'bash'
+  AND json_extract(t.arguments, '$.command') LIKE 'gh pr create%'
+ORDER BY t.at DESC;
+
+-- which files were edited most
+SELECT COALESCE(json_extract(arguments, '$.path'),
+                json_extract(arguments, '$.file_path')) AS file, COUNT(*)
+FROM tool_calls WHERE lower(name) = 'edit'
+GROUP BY file ORDER BY 2 DESC LIMIT 20;
+```
+
+The session id opens in the browser at `/sessions/<id>`.
+
 ## Working on it
 
 ```bash
@@ -69,4 +89,5 @@ See [AGENTS.md](AGENTS.md) for the things that cost somebody an hour.
 ## Status
 
 Under construction; see the [milestones](https://github.com/llimllib/spireweb/milestones).
-Browsing, search, live indexing, titles, and both session formats work.
+Browsing, search, live indexing, titles, both session formats, and the archive
+work.

@@ -306,6 +306,13 @@ because chunk ids are `AUTOINCREMENT` and `chunks_vec` is keyed by them.
   of `index` as well, but a sandbox with no Metal device lands in exactly that
   state, so it is where you will meet it.
 
+`tool_calls` is a view, dropped and recreated on every open because a view
+holds no data. It unions pi's `toolCall` blocks with Claude Code's `tool_use`
+blocks. Its `CASE` guard is load-bearing: `json_each` yields a string block as
+SQL text, which `json_extract` rejects, and SQLite does not promise to test
+`b.type` first. It has no block index, because Claude Code's parser drops
+block types it does not know, so a raw position would not match the tool URLs.
+
 After changing anything about indexing, both of these must return 0:
 
 ```sql
