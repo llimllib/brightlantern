@@ -30,6 +30,8 @@ usage:
   spireweb [flags]         browse sessions in a web interface (same as serve)
   spireweb serve [flags]   the same, named explicitly
   spireweb index [flags]   build or update the search index
+  spireweb merge [flags] OTHER.db
+                           fold another machine's index into this one
   spireweb stats [flags]   report what is in the index
   spireweb doctor [flags]  check the index for inconsistencies
   spireweb info            show paths and configuration
@@ -107,6 +109,13 @@ func main() {
 		} else {
 			err = runIndex(s.dbPath, s.dirs, *full, *lexical, *titleLimit, s.titles)
 		}
+	case "merge":
+		_ = fs.Parse(args)
+		if fs.NArg() != 1 {
+			fmt.Fprintln(os.Stderr, "usage: spireweb merge [--db PATH] [--lexical] OTHER.db")
+			os.Exit(2)
+		}
+		err = runMerge(configuredDB(givenFlags(fs), *dbPath), fs.Arg(0), *lexical)
 	case "stats":
 		_ = fs.Parse(args)
 		err = runStats(configuredDB(givenFlags(fs), *dbPath))
@@ -267,6 +276,64 @@ func runIndex(dbPath string, dirs []string, full, lexical bool, titleLimit int, 
 		return nil
 	}
 	return runTitles(ctx, db, titleLimit, titlesVia)
+}
+
+// runMerge folds another index's archive into this one.
+//
+// No titles pass afterwards, unlike index: the point of carrying titles across
+// is not paying for them again, and a merge that went on to spend money would
+// be a surprise. The next index or serve titles whatever arrived without one.
+func runMerge(dbPath, other string, lexical bool) error {
+	db, embedder, err := openIndex(dbPath, lexical)
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	start := time.Now()
+	var lastReport time.Time
+	rep, err := index.Merge(ctx, db, other, index.MergeOptions{
+		Embedder: embedder,
+		OnProgress: func(done, total int) {
+			if done < total && time.Since(lastReport) < 100*time.Millisecond {
+				return
+			}
+			lastReport = time.Now()
+			fmt.Printf("\r\033[Kindexing merged sessions %d/%d", done, total)
+		},
+	})
+	if rep.Added+rep.Extended+rep.Titles > 0 {
+		fmt.Println()
+	}
+	if err != nil {
+		return err
+	}
+	if err := db.Optimize(); err != nil {
+		return err
+	}
+
+	fmt.Printf("merged %s in %s: %d sessions there, %d added, %d extended, %d already here\n",
+		other, time.Since(start).Round(time.Millisecond), rep.Sessions, rep.Added, rep.Extended, rep.Same)
+	fmt.Printf("copied %d messages and %d titles, wrote %d chunks\n", rep.Messages, rep.Titles, rep.Chunks)
+	if rep.Unarchived > 0 {
+		note("%d sessions there predate its message archive and were skipped; "+
+			"run 'spireweb index' on that machine first", rep.Unarchived)
+	}
+	for _, c := range rep.Conflicts {
+		note("skipped %s: its path belongs to a different session here", c)
+	}
+	for _, d := range rep.Diverged {
+		// Named one by one: each is a session somebody may want to look at,
+		// and the append-only assumption breaking is worth knowing about.
+		note("skipped %s: %d of its messages differ between the two indexes", d.ID, d.Rows)
+	}
+	if embedder == nil && rep.Chunks > 0 {
+		note("merged without embeddings; the next index with the model will add them")
+	}
+	return nil
 }
 
 // summarizer builds the title generator for the chosen backend.

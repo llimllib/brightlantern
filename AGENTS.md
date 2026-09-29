@@ -282,6 +282,30 @@ without a merge, and merge reindexes what it brings in. A session rebuilt from
 the archive is marked `FromArchive`, which `upsertSession` reads to skip
 archiving it back into itself and to keep its `host`.
 
+### Merge
+
+`spireweb merge OTHER.db`: union by session id, longer copy wins. The other
+index is `ATTACH`ed with `mode=ro` through a `file:` URI, which works against
+a WAL database with no `-shm` and refuses writes. Only `sessions` and
+`messages` cross over; chunks and vectors are rebuilt here from the archive,
+because chunk ids are `AUTOINCREMENT` and `chunks_vec` is keyed by them.
+
+- **Divergence is compared in full**, every overlapping row, not at one index
+  like the prefix check -- it exists to catch the append-only assumption
+  failing and cannot lean on it. A diverged session is reported and neither
+  copy taken. 1264 sessions compare in about a second.
+- A title travels with `title_key` and `title_msgs` or not at all. The winning
+  row's title is taken when it has one; a losing copy's title still fills a
+  session that has none here.
+- A path claimed by a different session id here is reported and skipped:
+  `sessions.path` is unique and neither row can go without its archive.
+- No titles pass afterwards. Carrying titles is about not paying twice.
+- `--lexical` against an index that has `chunks_vec` fails with "no such
+  module: vec0" as soon as a chunk has to be deleted, because
+  `deleteChunksExceptTx` deletes vectors too. That predates merge and is true
+  of `index` as well, but a sandbox with no Metal device lands in exactly that
+  state, so it is where you will meet it.
+
 After changing anything about indexing, both of these must return 0:
 
 ```sql

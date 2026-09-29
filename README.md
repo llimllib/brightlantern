@@ -44,6 +44,17 @@ message. Two backends, set with `titles` in the config file or `--titles-via`:
 `titles = "off"` lists every session under its opening message, which is what
 spireweb did for its first five milestones.
 
+## The archive
+
+The index keeps every message of every session as its agent wrote it, so a
+session stays readable and searchable after its file is gone. `spireweb info`
+says where it is.
+
+`spireweb merge other.db` folds another machine's index into this one. Sessions
+are matched by id and the longer copy wins; titles come with them, so they are
+not paid for twice. A session whose two copies disagree is reported and left
+alone.
+
 ## Working on it
 
 ```bash
