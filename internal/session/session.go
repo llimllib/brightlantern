@@ -133,6 +133,16 @@ type Session struct {
 
 	Messages []Message
 
+	// Host is the machine the session was recorded on. Empty for a file parsed
+	// here, which means this machine; set when a session is rebuilt from an
+	// archive that may have been merged from another one.
+	Host string
+
+	// FromArchive reports that the session was rebuilt from the index's
+	// message archive rather than parsed from its file, which is either gone
+	// or on another machine.
+	FromArchive bool
+
 	// SkippedLines counts lines that could not be parsed. A nonzero value is
 	// normal for a session pi is actively writing; a large value suggests the
 	// format moved.

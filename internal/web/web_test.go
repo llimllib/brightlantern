@@ -209,14 +209,99 @@ func TestUnknownSessionIs404(t *testing.T) {
 	}
 }
 
-// The index records what was on disk when it last ran. A session deleted
-// since then should still show its metadata and say what happened, rather
-// than producing an error page.
-func TestMissingFileDegradesGracefully(t *testing.T) {
+// A session whose file is gone renders from the archive, and says so.
+func TestMissingFileRendersFromTheArchive(t *testing.T) {
+	f := newFixture(t, map[string][]string{"aaa": {
+		userMsg("hello there"),
+		toolCallMsg("tc1", "bash", `{"command":"git log --oneline"}`),
+		toolResultMsg("tc1", "abc123 first commit"),
+		assistantMsg("general kenobi"),
+	}})
+	if err := os.Remove(filepath.Join(f.dir, "aaa.jsonl")); err != nil {
+		t.Fatal(err)
+	}
+
+	rec, doc := f.get(t, "/sessions/aaa")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+	if notice := doc.Find(".notice").Text(); !strings.Contains(notice, "from the archive") {
+		t.Errorf("notice = %q", notice)
+	}
+	if !strings.Contains(doc.Find(".reading").Text(), "general kenobi") {
+		t.Error("the archived transcript did not render")
+	}
+
+	// Tool output is fetched separately, and has to come from the archive too.
+	rec, doc = f.get(t, "/sessions/aaa/tool/1/0")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("tool status = %d, want 200", rec.Code)
+	}
+	if !strings.Contains(doc.Find(".tool-output").Text(), "abc123 first commit") {
+		t.Errorf("tool output = %q", doc.Find(".tool-output").Text())
+	}
+}
+
+// The file wins while it exists: it is live, and the archive is only as fresh
+// as the last index run.
+func TestTranscriptPrefersTheFileToTheArchive(t *testing.T) {
+	f := newFixture(t, map[string][]string{"aaa": {userMsg("hello there")}})
+	p := filepath.Join(f.dir, "aaa.jsonl")
+	fh, err := os.OpenFile(p, os.O_APPEND|os.O_WRONLY, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := fh.WriteString(assistantMsg("written since the last index run") + "\n"); err != nil {
+		t.Fatal(err)
+	}
+	fh.Close()
+
+	_, doc := f.get(t, "/sessions/aaa")
+	if !strings.Contains(doc.Find(".reading").Text(), "written since the last index run") {
+		t.Error("the transcript came from the archive while the file exists")
+	}
+	if n := doc.Find(".notice").Length(); n != 0 {
+		t.Errorf("notice shown for a session read from its file: %q", doc.Find(".notice").Text())
+	}
+}
+
+// A session recorded elsewhere names the machine rather than a path that
+// means nothing here.
+func TestArchivedSessionFromAnotherHostNamesIt(t *testing.T) {
 	f := newFixture(t, map[string][]string{"aaa": {userMsg("hello there")}})
 	if err := os.Remove(filepath.Join(f.dir, "aaa.jsonl")); err != nil {
 		t.Fatal(err)
 	}
+	db, err := index.Open(f.dbPath, index.DriverName)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.SQL().Exec(`UPDATE sessions SET host = 'other-laptop'`); err != nil {
+		t.Fatal(err)
+	}
+	db.Close()
+
+	_, doc := f.get(t, "/sessions/aaa")
+	if notice := doc.Find(".notice").Text(); !strings.Contains(notice, "other-laptop") {
+		t.Errorf("notice = %q, want the host named", notice)
+	}
+}
+
+// With neither a file nor an archive, the metadata still shows and the notice
+// says what happened, rather than an error page.
+func TestMissingFileAndArchiveDegradesGracefully(t *testing.T) {
+	f := newFixture(t, map[string][]string{"aaa": {userMsg("hello there")}})
+	if err := os.Remove(filepath.Join(f.dir, "aaa.jsonl")); err != nil {
+		t.Fatal(err)
+	}
+	db, err := index.Open(f.dbPath, index.DriverName)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.SQL().Exec(`DELETE FROM messages`); err != nil {
+		t.Fatal(err)
+	}
+	db.Close()
 
 	rec, doc := f.get(t, "/sessions/aaa")
 	if rec.Code != http.StatusOK {
@@ -229,6 +314,9 @@ func TestMissingFileDegradesGracefully(t *testing.T) {
 	// Metadata still comes from the index.
 	if !strings.Contains(doc.Find(".reading-head").Text(), "hello there") {
 		t.Error("metadata missing for a session whose file is gone")
+	}
+	if rec, _ := f.get(t, "/sessions/aaa/tool/0/0"); rec.Code != http.StatusGone {
+		t.Errorf("tool status = %d, want 410", rec.Code)
 	}
 }
 

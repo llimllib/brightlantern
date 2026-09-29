@@ -6,7 +6,6 @@ import (
 	"sync"
 
 	"github.com/llimllib/spireweb/internal/index"
-	"github.com/llimllib/spireweb/internal/session"
 )
 
 // DefaultConcurrency is how many summaries are in flight at once.
@@ -97,7 +96,7 @@ func Run(ctx context.Context, db *index.DB, opts Options) (Progress, error) {
 			defer wg.Done()
 			for c := range jobs {
 				select {
-				case results <- summarize(ctx, opts.Summarizer, c):
+				case results <- summarize(ctx, db, opts.Summarizer, c):
 				case <-ctx.Done():
 					return
 				}
@@ -183,13 +182,15 @@ type result struct {
 //
 // Parsing here rather than in the caller is the reason the pass is concurrent
 // at all for a cached run: hashing 1128 files is the work, and it parallelizes.
-func summarize(ctx context.Context, s Summarizer, c index.TitleCandidate) result {
+//
+// A session with no file here is read from the archive. Without that, one
+// merged from another machine with no title would fail on every run and be
+// retried on every run after, since a failure records nothing.
+func summarize(ctx context.Context, db *index.DB, s Summarizer, c index.TitleCandidate) result {
 	r := result{id: c.ID, nMsgs: c.NumMsgs}
 
-	sess, err := session.Parse(c.Path)
+	sess, err := db.LoadSession(ctx, c.ID, c.Path)
 	if err != nil {
-		// The file is gone or unreadable. Indexing will notice and remove the
-		// row; there is nothing useful to do here.
 		r.err = err
 		return r
 	}

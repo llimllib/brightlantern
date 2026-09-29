@@ -1,7 +1,9 @@
 package web
 
 import (
+	"context"
 	"errors"
+	"fmt"
 	"log"
 	"net/http"
 	"os"
@@ -11,6 +13,7 @@ import (
 	"github.com/llimllib/spireweb/internal/index"
 	"github.com/llimllib/spireweb/internal/render"
 	"github.com/llimllib/spireweb/internal/search"
+	"github.com/llimllib/spireweb/internal/session"
 )
 
 // listLimit is how many rows the list pane renders.
@@ -67,8 +70,9 @@ type pageData struct {
 	// semantic hit can be located without any term having been found in it.
 	ScrollTo string
 
-	// Notice explains a degraded reading pane: a session whose file has been
-	// deleted, or one with no conversation in it.
+	// Notice explains an unusual reading pane: a session shown from the
+	// archive, one that cannot be shown at all, or one with no conversation
+	// in it.
 	Notice string
 
 	// EmptyIndex means there is nothing to browse at all, which needs an
@@ -188,21 +192,22 @@ func (s *Server) handleSearch(w http.ResponseWriter, r *http.Request) {
 	s.render(w, r, "list.html", data)
 }
 
-// loadTranscript parses the session file and fills in the right pane.
+// loadTranscript fills in the right pane from the session's file, or from the
+// archive when the file is not on this machine.
 //
-// A missing file is reported in place rather than as an error page: the index
-// is a cache of what was on disk when it last ran, and a session deleted since
-// then should still show its metadata and say what happened.
+// Neither is reported in place rather than as an error page: the session's
+// metadata is still worth showing, with a sentence saying what happened.
 func (s *Server) loadTranscript(r *http.Request, data *pageData, sum index.Summary) {
 	data.Selected = &sum
 
-	parsed, err := s.cache.Get(sum.Path)
-	if err != nil {
-		if os.IsNotExist(err) {
-			data.Notice = "This session's file is no longer on disk: " + sum.Path
-		} else {
-			data.Notice = "Could not read this session: " + err.Error()
-		}
+	parsed, err := s.loadSession(r.Context(), sum)
+	switch {
+	case errors.Is(err, index.ErrNotArchived):
+		data.Notice = "This session's file is no longer on disk, and it was indexed " +
+			"before the archive existed: " + sum.Path
+		return
+	case err != nil:
+		data.Notice = "Could not read this session: " + err.Error()
 		return
 	}
 	data.Transcript = render.Transcript(parsed)
@@ -210,7 +215,43 @@ func (s *Server) loadTranscript(r *http.Request, data *pageData, sum index.Summa
 		data.Notice = "This session has no conversation in it."
 		return
 	}
+	if parsed.FromArchive {
+		data.Notice = archivedNotice(sum)
+	}
 	s.locateMatches(r, data, sum)
+}
+
+// loadSession reads a session from its file, and from the archive when there
+// is no file.
+//
+// The file wins whenever it exists. It is live, and the archive is only as
+// fresh as the last index run, so preferring the archive would make the pane
+// go stale for the session being worked in -- the one most likely to be open.
+func (s *Server) loadSession(ctx context.Context, sum index.Summary) (*session.Session, error) {
+	parsed, err := s.cache.Get(sum.Path)
+	if err == nil || !os.IsNotExist(err) {
+		return parsed, err
+	}
+	rows, err := s.db.ArchiveVersion(ctx, sum.ID)
+	if err != nil {
+		return nil, err
+	}
+	if rows == 0 {
+		return nil, fmt.Errorf("%q: %w", sum.ID, index.ErrNotArchived)
+	}
+	return s.cache.GetArchived(sum.ID, rows, func() (*session.Session, error) {
+		return s.db.ArchivedSession(ctx, sum.ID)
+	})
+}
+
+// archivedNotice says where a session shown from the archive came from. The
+// host is named only when it is another machine, since that is the case where
+// the path is not somewhere to go and look.
+func archivedNotice(sum index.Summary) string {
+	if sum.Host != "" && sum.Host != index.Hostname() {
+		return "Shown from the archive: this session was recorded on " + sum.Host + "."
+	}
+	return "Shown from the archive: this session's file is no longer on disk (" + sum.Path + ")."
 }
 
 // locateMatches works out which messages in the open session matched, and
@@ -225,8 +266,9 @@ func (s *Server) locateMatches(r *http.Request, data *pageData, sum index.Summar
 	}
 
 	// Only messages that actually rendered can be scrolled to. The transcript
-	// is parsed from the file while the match came from the index, so a session
-	// that shrank since it was indexed can name a message that is not there.
+	// is usually parsed from the file while the match came from the index, so
+	// a session that shrank since it was indexed can name a message that is
+	// not there.
 	anchored := make(map[int]bool, len(data.Transcript))
 	for _, e := range data.Transcript {
 		if e.Anchor {
@@ -306,9 +348,9 @@ func (s *Server) handleTool(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	parsed, err := s.cache.Get(sum.Path)
+	parsed, err := s.loadSession(r.Context(), sum)
 	if err != nil {
-		http.Error(w, "session file unavailable", http.StatusGone)
+		http.Error(w, "session unavailable", http.StatusGone)
 		return
 	}
 

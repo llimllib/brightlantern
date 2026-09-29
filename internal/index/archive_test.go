@@ -3,10 +3,13 @@ package index
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
 	"time"
+
+	"github.com/llimllib/spireweb/internal/session"
 )
 
 func archivedCount(t *testing.T, db *DB, sessionID string) int {
@@ -219,6 +222,66 @@ func TestArchiveCascadesWithTheSession(t *testing.T) {
 	}
 	if n := archivedCount(t, db, "s1"); n != 0 {
 		t.Errorf("archived = %d after the session was removed, want 0", n)
+	}
+}
+
+// A session whose file is gone renders from the archive exactly as it did
+// from the file.
+func TestArchivedSessionMatchesTheFile(t *testing.T) {
+	dir := writeCorpus(t, map[string][]string{
+		"s1": {userMsg("how do I center a div"), assistantMsg("use flexbox")},
+	})
+	db := openTest(t)
+	if _, err := Build(context.Background(), db, BuildOptions{Dirs: []string{dir}}); err != nil {
+		t.Fatal(err)
+	}
+	p := filepath.Join(dir, "--Users-me-code-proj--", "s1.jsonl")
+	want, err := session.Parse(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(p); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := db.ArchivedSession(context.Background(), "s1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !got.FromArchive || got.Host != Hostname() {
+		t.Errorf("FromArchive=%v Host=%q", got.FromArchive, got.Host)
+	}
+	// started_at is stored to the second.
+	if got.Path != p || got.CWD != want.CWD || !got.StartedAt.Equal(want.StartedAt.Truncate(time.Second)) {
+		t.Errorf("metadata = %q %q %v, want %q %q %v",
+			got.Path, got.CWD, got.StartedAt, p, want.CWD, want.StartedAt)
+	}
+	if len(got.Messages) != len(want.Messages) {
+		t.Fatalf("%d messages, want %d", len(got.Messages), len(want.Messages))
+	}
+	for i := range got.Messages {
+		if got.Messages[i].Role != want.Messages[i].Role ||
+			got.Messages[i].Content[0].Text != want.Messages[i].Content[0].Text {
+			t.Errorf("message %d = %+v, want %+v", i, got.Messages[i], want.Messages[i])
+		}
+	}
+}
+
+func TestArchivedSessionReportsWhatIsMissing(t *testing.T) {
+	db := openTest(t)
+	if _, err := db.ArchivedSession(context.Background(), "nope"); !errors.Is(err, ErrNotFound) {
+		t.Errorf("unknown session: err = %v, want ErrNotFound", err)
+	}
+
+	dir := writeCorpus(t, map[string][]string{"s1": {userMsg("first")}})
+	if _, err := Build(context.Background(), db, BuildOptions{Dirs: []string{dir}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.SQL().Exec(`DELETE FROM messages`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.ArchivedSession(context.Background(), "s1"); !errors.Is(err, ErrNotArchived) {
+		t.Errorf("unarchived session: err = %v, want ErrNotArchived", err)
 	}
 }
 

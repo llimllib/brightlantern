@@ -252,8 +252,7 @@ exclusions -- SDK files, empty sessions -- are deleted. Before this the sweep
 deleted anything it did not see, and `messages` cascaded with it, which made
 the archive exactly as durable as the session directory and deleted every
 merged session on the next build. It also meant one `spireweb index --dir
-somewhere-else` against the real index would wipe the rest of it. A session
-with no file still shows its metadata, and says its file is gone.
+somewhere-else` against the real index would wipe the rest of it.
 
 **A file that is a prefix of its archive does not truncate it.**
 `archiveMessages` compares the file's last message to the row at that index:
@@ -261,6 +260,20 @@ equal means the archive holds more (a longer copy merged in, or a truncated
 file) and the extra rows stay, with `n_msgs` set to the archive's count;
 different means a rewrite, and the extras go. Without the first half, `merge`'s
 "longer wins" would be undone the next time the shorter local file changed.
+
+Everything that read a session file falls back to the archive:
+`index.LoadSession` and the web handlers read the file if it exists and
+`ArchivedSession` if not. **The file wins when both exist**: it is live, and
+the archive is only as fresh as the last index run. The titles pass uses
+`LoadSession` too; without it a merged session with no title fails, records
+nothing, and is retried on every run.
+
+`session.DecodeArchived` is the inverse of `ParseWithRaw` and has to preserve
+positions exactly, because `chunks.msg_idx`, the tool URLs and the scroll
+anchors all address messages by index. Claude Code's fan-out means N rows share
+one record, so a row is decoded only if an earlier row's fan-out has not
+already produced its index; a missing row is padded with an empty `Message`
+rather than closed up.
 
 After changing anything about indexing, both of these must return 0:
 
@@ -398,8 +411,8 @@ Four things that are true and worth not rediscovering:
 
 ## Rendering
 
-Transcripts are parsed from the `.jsonl` on demand, not stored. The DB is a
-search index; session files are the source of truth. Prose is 0.3–2.6% of a
+Transcripts are parsed from the `.jsonl` on demand, and from the archive only
+when there is no file (see above). Prose is 0.3–2.6% of a
 large session's bytes -- a 7MB session is well under 100KB of conversation --
 so tool output is fetched lazily and nothing needs pagination.
 

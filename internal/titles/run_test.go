@@ -110,6 +110,26 @@ func TestRunTitlesEverySession(t *testing.T) {
 	}
 }
 
+// A session whose file is gone is titled from the archive. Otherwise it would
+// fail, record nothing, and be retried on every run for ever.
+func TestRunTitlesArchivedSessions(t *testing.T) {
+	db, dir := indexed(t, map[string][]string{"s1": {userMsg("alpha question")}})
+	if err := os.Remove(filepath.Join(dir, "--Users-me-code-proj--", "s1.jsonl")); err != nil {
+		t.Fatal(err)
+	}
+
+	p, err := Run(context.Background(), db, Options{Summarizer: &fake{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p.Titled != 1 || p.Failed != 0 {
+		t.Errorf("progress = %+v, want 1 titled; first error %v", p, p.FirstErr)
+	}
+	if got := titleOf(t, db, "s1"); got != "Title for alpha" {
+		t.Errorf("title = %q", got)
+	}
+}
+
 // The expensive half of the cache: a second pass must not call the model at
 // all. 332 sessions at a fraction of a cent each is fine once and not fine on
 // every reindex.

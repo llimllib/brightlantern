@@ -4,6 +4,8 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
+	"os"
 	"time"
 
 	"github.com/llimllib/spireweb/internal/session"
@@ -111,6 +113,81 @@ func isArchivePrefix(ctx context.Context, tx *sql.Tx, s *session.Session) (bool,
 		return false, err
 	}
 	return stored == string(last.Raw), nil
+}
+
+// ErrNotArchived reports a session with no archived messages.
+var ErrNotArchived = errors.New("session not archived")
+
+// ArchivedSession rebuilds a session from the archive, for when its file is
+// gone or was never on this machine.
+//
+// Only the fallback. A file that exists is live and the archive is only as
+// fresh as the last index run, so callers read the file first -- preferring
+// this would make the reading pane go stale for the session being worked in.
+func (d *DB) ArchivedSession(ctx context.Context, id string) (*session.Session, error) {
+	s := &session.Session{ID: id, FromArchive: true}
+	var startedAt string
+	var mtime int64
+	err := d.sql.QueryRowContext(ctx,
+		`SELECT path, host, cwd, started_at, mtime, size FROM sessions WHERE id = ?`, id).
+		Scan(&s.Path, &s.Host, &s.CWD, &startedAt, &mtime, &s.Size)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, fmt.Errorf("%q: %w", id, ErrNotFound)
+	}
+	if err != nil {
+		return nil, err
+	}
+	s.StartedAt, _ = time.Parse(time.RFC3339, startedAt)
+	s.ModTime = time.Unix(0, mtime)
+
+	rows, err := d.sql.QueryContext(ctx,
+		`SELECT idx, at, content FROM messages WHERE session_id = ? ORDER BY idx`, id)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var archived []session.ArchivedMessage
+	for rows.Next() {
+		var m session.ArchivedMessage
+		var at string
+		var content string
+		if err := rows.Scan(&m.Idx, &at, &content); err != nil {
+			return nil, err
+		}
+		m.At, _ = time.Parse(time.RFC3339Nano, at)
+		m.Raw = []byte(content)
+		archived = append(archived, m)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	if len(archived) == 0 {
+		return nil, fmt.Errorf("%q: %w", id, ErrNotArchived)
+	}
+	s.Messages, s.SkippedLines = session.DecodeArchived(archived)
+	return s, nil
+}
+
+// LoadSession reads a session from its file, or rebuilds it from the archive
+// when the file is not on this machine. The file wins whenever it exists, for
+// the reason ArchivedSession gives.
+func (d *DB) LoadSession(ctx context.Context, id, path string) (*session.Session, error) {
+	s, err := session.Parse(path)
+	if err == nil || !os.IsNotExist(err) {
+		return s, err
+	}
+	return d.ArchivedSession(ctx, id)
+}
+
+// ArchiveVersion identifies the current state of a session's archive, for
+// callers that cache what ArchivedSession returns. The archive is append-only
+// and merge only ever replaces a session with a longer one, so the count of
+// rows changes whenever the contents do.
+func (d *DB) ArchiveVersion(ctx context.Context, id string) (int, error) {
+	var n int
+	err := d.sql.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM messages WHERE session_id = ?`, id).Scan(&n)
+	return n, err
 }
 
 // NeedsArchive reports whether the next build will backfill the archive, so a
