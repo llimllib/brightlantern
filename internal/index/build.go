@@ -3,6 +3,7 @@ package index
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -47,6 +48,11 @@ type Progress struct {
 
 	// Messages counts rows added to the archive this run.
 	Messages int
+
+	// FromArchive counts sessions reindexed from the archive because they had
+	// no file in this run: merged from another machine, deleted, or in a
+	// directory that is no longer listed. Only a full pass does this.
+	FromArchive int
 }
 
 // BuildOptions configures a Build run.
@@ -77,8 +83,9 @@ type Embedder interface {
 //
 // A session whose file vanished stays. The archive holds its messages and its
 // chunks stay searchable, which is the point of having an archive: it is not a
-// mirror of the session directory. Only sessions this run decided to exclude
-// are removed.
+// mirror of the session directory, and a session merged from another machine
+// never had a file here at all. Only sessions this run decided to exclude are
+// removed.
 func Build(ctx context.Context, d *DB, opts BuildOptions) (Progress, error) {
 	if len(opts.Dirs) == 0 {
 		opts.Dirs = []string{session.DefaultDir()}
@@ -223,12 +230,42 @@ func Build(ctx context.Context, d *DB, opts BuildOptions) (Progress, error) {
 
 	// Sessions this run did not see are either excluded, and removed, or have
 	// no file here, and are kept with the archive as their source.
-	for path := range known {
-		if excluded[path] && !seen[path] {
+	//
+	// A full pass rebuilds the latter from the archive, the same as it would
+	// from a file, so the promotions above reach them too: an archived session
+	// gains vectors when embedding becomes available and its title chunk when
+	// a title is written. An incremental pass leaves them alone, because
+	// nothing about them can have changed without a merge, and merge reindexes
+	// what it brings in.
+	for path, st := range known {
+		if seen[path] {
+			continue
+		}
+		if excluded[path] {
 			if err := d.deleteByPath(path); err != nil {
 				return p, err
 			}
+			continue
 		}
+		if !opts.Full {
+			continue
+		}
+		if err := ctx.Err(); err != nil {
+			return p, err
+		}
+		n, err := d.reindexArchived(ctx, st.id, opts)
+		if errors.Is(err, ErrNotArchived) {
+			// Indexed before the archive existed, and its file went before a
+			// backfill could store it. Its chunks are all that is left of it,
+			// and they stay.
+			continue
+		}
+		if err != nil {
+			return p, fmt.Errorf("index %s from the archive: %w", st.id, err)
+		}
+		p.FromArchive++
+		p.Chunks += n
+		report(p)
 	}
 
 	if opts.Embedder != nil {
@@ -247,12 +284,13 @@ func Build(ctx context.Context, d *DB, opts BuildOptions) (Progress, error) {
 }
 
 type fileState struct {
+	id    string
 	mtime int64
 	size  int64
 }
 
 func (d *DB) knownFiles() (map[string]fileState, error) {
-	rows, err := d.sql.Query(`SELECT path, mtime, size FROM sessions`)
+	rows, err := d.sql.Query(`SELECT path, id, mtime, size FROM sessions`)
 	if err != nil {
 		return nil, err
 	}
@@ -261,7 +299,7 @@ func (d *DB) knownFiles() (map[string]fileState, error) {
 	for rows.Next() {
 		var p string
 		var st fileState
-		if err := rows.Scan(&p, &st.mtime, &st.size); err != nil {
+		if err := rows.Scan(&p, &st.id, &st.mtime, &st.size); err != nil {
 			return nil, err
 		}
 		out[p] = st
@@ -365,6 +403,14 @@ func (d *DB) upsertSession(ctx context.Context, s *session.Session, opts BuildOp
 		`DELETE FROM sessions WHERE path = ? AND id <> ?`, s.Path, s.ID); err != nil {
 		return 0, 0, err
 	}
+	// A session rebuilt from the archive keeps the host it was recorded on.
+	// The column is machine-local metadata, and "which laptop was this on" is
+	// the question it exists to answer after a merge.
+	host := s.Host
+	if host == "" {
+		host = Hostname()
+	}
+
 	// title is deliberately absent from the UPDATE list: it is written by a
 	// separate pass and must survive a reindex, which happens every time the
 	// session grows by one message.
@@ -377,7 +423,7 @@ func (d *DB) upsertSession(ctx context.Context, s *session.Session, opts BuildOp
 			mtime = excluded.mtime, size = excluded.size,
 			n_msgs = excluded.n_msgs, preview = excluded.preview,
 			reply = excluded.reply`,
-		s.ID, s.Path, Hostname(), s.CWD, s.Project(),
+		s.ID, s.Path, host, s.CWD, s.Project(),
 		s.StartedAt.UTC().Format(time.RFC3339),
 		s.ModTime.UnixNano(), s.Size, len(s.Messages), s.Preview(200), s.Reply(200),
 	); err != nil {
@@ -387,18 +433,24 @@ func (d *DB) upsertSession(ctx context.Context, s *session.Session, opts BuildOp
 	// After the session row, which the foreign key depends on, and inside the
 	// same transaction: a session whose chunks were written but whose messages
 	// were not would look archived and not be.
-	var total int
-	msgs, total, err = archiveMessages(ctx, tx, s)
-	if err != nil {
-		return 0, 0, fmt.Errorf("archive: %w", err)
-	}
-	// The archive can hold more than the file: see archiveMessages. The count
-	// is the archive's, so that it describes what the session is rather than
-	// how much of it this machine still has on disk.
-	if total > len(s.Messages) {
-		if _, err := tx.ExecContext(ctx,
-			`UPDATE sessions SET n_msgs = ? WHERE id = ?`, total, s.ID); err != nil {
-			return 0, 0, err
+	//
+	// Not for a session rebuilt from the archive, which would be writing the
+	// archive back into itself -- harmlessly, until a row that failed to decode
+	// made the rebuilt session look shorter than what it came from.
+	if !s.FromArchive {
+		var total int
+		msgs, total, err = archiveMessages(ctx, tx, s)
+		if err != nil {
+			return 0, 0, fmt.Errorf("archive: %w", err)
+		}
+		// The archive can hold more than the file: see archiveMessages. The
+		// count is the archive's, so that it describes what the session is
+		// rather than how much of it this machine still has on disk.
+		if total > len(s.Messages) {
+			if _, err := tx.ExecContext(ctx,
+				`UPDATE sessions SET n_msgs = ? WHERE id = ?`, total, s.ID); err != nil {
+				return 0, 0, err
+			}
 		}
 	}
 
@@ -444,6 +496,28 @@ func (d *DB) upsertSession(ctx context.Context, s *session.Session, opts BuildOp
 	}
 
 	return len(ids), msgs, tx.Commit()
+}
+
+// reindexArchived chunks, and embeds, a session from its archived messages
+// rather than from a file.
+//
+// No logic of its own beyond the source: the rebuilt session goes through the
+// same upsert a parsed one does, so chunk reuse, the title chunk and the token
+// limit all apply unchanged.
+//
+// The rebuild reads through the writer before upsertSession opens its
+// transaction. Inside it would be the same connection either way, but the
+// read is the large part and there is no reason to hold the write lock for it.
+func (d *DB) reindexArchived(ctx context.Context, id string, opts BuildOptions) (int, error) {
+	if opts.ChunkChars <= 0 {
+		opts.ChunkChars = session.MaxChunkChars
+	}
+	s, err := d.ArchivedSession(ctx, id)
+	if err != nil {
+		return 0, err
+	}
+	n, _, err := d.upsertSession(ctx, s, opts)
+	return n, err
 }
 
 // chunkKey identifies a chunk by content and position, so identical text in two

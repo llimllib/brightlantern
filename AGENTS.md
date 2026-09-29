@@ -275,6 +275,13 @@ one record, so a row is decoded only if an earlier row's fan-out has not
 already produced its index; a missing row is padded with an empty `Message`
 rather than closed up.
 
+A full pass reindexes every session it did not see **from the archive**, which
+is how the `needsVectors` and `needsTitleChunks` promotions reach sessions with
+no file. An incremental pass leaves them alone: nothing about them changes
+without a merge, and merge reindexes what it brings in. A session rebuilt from
+the archive is marked `FromArchive`, which `upsertSession` reads to skip
+archiving it back into itself and to keep its `host`.
+
 After changing anything about indexing, both of these must return 0:
 
 ```sql

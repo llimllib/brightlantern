@@ -249,6 +249,9 @@ func runIndex(dbPath string, dirs []string, full, lexical bool, titleLimit int, 
 
 	fmt.Printf("indexed %d sessions (%d chunks, %d messages archived) in %s\n",
 		p.Indexed, p.Chunks, p.Messages, time.Since(start).Round(time.Millisecond))
+	if p.FromArchive > 0 {
+		fmt.Printf("reindexed %d sessions with no file here from the archive\n", p.FromArchive)
+	}
 	if p.Excluded > 0 {
 		// Named rather than folded into "skipped", which means unchanged. A
 		// corpus that is mostly excluded is a surprising thing to discover from

@@ -2,6 +2,7 @@ package index
 
 import (
 	"context"
+	"os"
 	"path/filepath"
 	"testing"
 
@@ -89,5 +90,48 @@ func TestNearestNeighbourFindsParaphrase(t *testing.T) {
 	}
 	if got != "perf" {
 		t.Errorf("nearest neighbour = %q, want %q", got, "perf")
+	}
+}
+
+// A session with no file gains vectors when embedding becomes available, the
+// same as one with a file: needsVectors promotes the run to a full pass, and
+// the full pass reaches archived sessions too. This is also what makes a merge
+// on a machine with no model complete later, on one with.
+func TestVectorBackfillReachesArchivedSessions(t *testing.T) {
+	semanticPaths(t)
+
+	path := filepath.Join(t.TempDir(), "i.db")
+	db, err := Open(path, SemanticDriverName)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	e, err := embed.New(db.SQL(), embed.DefaultPaths())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.EnsureVectorTable(e.Dim()); err != nil {
+		t.Fatal(err)
+	}
+
+	// Indexed lexically, then its file removed: chunks with no vectors, and no
+	// file for a backfill to parse.
+	dir := writeCorpus(t, map[string][]string{"s1": {userMsg("the quicksand incident")}})
+	if _, err := Build(context.Background(), db, BuildOptions{Dirs: []string{dir}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(filepath.Join(dir, "--Users-me-code-proj--", "s1.jsonl")); err != nil {
+		t.Fatal(err)
+	}
+
+	p, err := Build(context.Background(), db, BuildOptions{Dirs: []string{dir}, Embedder: e})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !p.Backfill || p.FromArchive != 1 {
+		t.Errorf("Backfill=%v FromArchive=%d, want a backfill that reached the archive", p.Backfill, p.FromArchive)
+	}
+	if missing, err := db.needsVectors(); err != nil || missing {
+		t.Errorf("needsVectors = %v, %v after the backfill", missing, err)
 	}
 }
