@@ -70,7 +70,8 @@ const (
 // answers it as directly as putting them in order.
 func (s *Server) rowsFor(ctx context.Context, q, sort string) ([]row, error) {
 	q = strings.TrimSpace(q)
-	if q == "" || s.engine == nil {
+	engine := s.engine.Load()
+	if q == "" || engine == nil {
 		summaries, err := s.db.ListSessions(ctx, listLimit, 0)
 		if err != nil {
 			return nil, err
@@ -82,7 +83,7 @@ func (s *Server) rowsFor(ctx context.Context, q, sort string) ([]row, error) {
 		return rows, nil
 	}
 
-	results, err := s.engine.SearchSessions(ctx, s.db.SQL(), search.Query{Text: q}, searchLimit)
+	results, err := engine.SearchSessions(ctx, s.db.SQL(), search.Query{Text: q}, searchLimit)
 	if err != nil {
 		return nil, err
 	}

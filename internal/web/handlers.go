@@ -100,7 +100,7 @@ func (s *Server) newPage(r *http.Request) (pageData, error) {
 		Query:         q,
 		Sort:          sort,
 		Searching:     strings.TrimSpace(q) != "",
-		SearchEnabled: s.engine != nil,
+		SearchEnabled: s.engine.Load() != nil,
 		SessionCount:  count,
 	}
 	if data.Searching && len(rows) == 0 {
@@ -261,7 +261,7 @@ func archivedNotice(sum index.Summary) string {
 // without it, and a search that cannot say where the match is should still
 // show the session.
 func (s *Server) locateMatches(r *http.Request, data *pageData, sum index.Summary) {
-	if strings.TrimSpace(data.Query) == "" || s.engine == nil {
+	if strings.TrimSpace(data.Query) == "" || s.engine.Load() == nil {
 		return
 	}
 

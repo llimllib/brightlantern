@@ -3,6 +3,8 @@ package web
 import (
 	"encoding/json"
 	"net/http"
+
+	"github.com/llimllib/brightlantern/internal/search"
 )
 
 // InstancePath is where a running server says what it is.
@@ -24,6 +26,10 @@ type Instance struct {
 	// Writing is whether this server keeps the index current. A --no-watch
 	// server only reads, and is no reason for index to refuse.
 	Writing bool `json:"writing"`
+	// Semantic is whether search has the embedding model yet. serve starts
+	// keyword-only and adds it once the model loads, which is up to fifteen
+	// seconds after the server first answers.
+	Semantic bool `json:"semantic"`
 }
 
 // InstanceName is Instance.Name, which is how a client recognises the answer
@@ -33,9 +39,23 @@ const InstanceName = "brightlantern"
 func (s *Server) handleInstance(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(Instance{
-		Name:    InstanceName,
-		Version: s.opts.Version,
-		Index:   s.opts.IndexPath,
-		Writing: s.indexer != nil,
+		Name:     InstanceName,
+		Version:  s.opts.Version,
+		Index:    s.opts.IndexPath,
+		Writing:  s.indexer != nil,
+		Semantic: s.semantic(),
 	})
+}
+
+func (s *Server) semantic() bool {
+	e := s.engine.Load()
+	if e == nil {
+		return false
+	}
+	for _, r := range e.Rankers {
+		if _, ok := r.(*search.Semantic); ok {
+			return true
+		}
+	}
+	return false
 }

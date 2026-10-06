@@ -87,9 +87,12 @@ were three generations a week apart on one machine. It is caused by
 `-DGGML_METAL_EMBED_LIBRARY=ON`, which is also what makes the dylib relocatable
 and therefore shippable. `noteSlowModelLoad` says so after a two second grace
 rather than before every load, because the warm case is overwhelmingly common.
-Removing the cost rather than narrating it means building with the flag off and
-shipping a precompiled `.metallib` -- unmeasured, and it trades away the
-single-file property.
+`serve` pays it behind the page instead: it answers on the lexical driver and
+`warm` swaps semantic search in once the model loads. Removing the cost means
+building with the flag off and shipping a precompiled `.metallib`, which needs
+the Metal compiler -- full Xcode plus its separately downloaded Metal
+toolchain, not Command Line Tools -- and only removes half of it: the
+pipeline-state cache is keyed by GPU driver and recompiles regardless (#56).
 
 ## Connections
 
@@ -451,10 +454,19 @@ next interval (2s busy, 10s idle) rather than the page choosing once at load.
 The page seeds the poll with the session count it rendered with, which is how
 "3 new sessions" works without the server tracking per-client state.
 
-Rankers are chosen once, at startup, so nothing there may depend on index
-*contents*: a server started against an empty index would otherwise stay
-keyword-only for its whole life. The semantic ranker is attached whenever the
-model loads, and returns nothing until vectors exist.
+The engine changes exactly once: lexical when the server starts answering,
+lexical plus semantic once `warm` has loaded the model into its own reader
+pool. Browsing stays on the lexical pool throughout. Nothing about the choice
+may depend on index *contents*: a server started against an empty index would
+otherwise stay keyword-only for its whole life. The semantic ranker is attached
+whenever the model loads, and returns nothing until vectors exist.
+
+`warm` loads the reader before opening the writer, not alongside it. The first
+connection compiles the shaders and every later one hits the cache, so two at
+once would compile twice; search goes first because someone at the page is
+waiting for it. Until the writer exists `/status` reports `starting`, because
+an empty response removes the header's poller and the page would never notice
+the indexer arrive.
 
 ## Titles
 

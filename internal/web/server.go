@@ -16,6 +16,7 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/llimllib/brightlantern/internal/index"
@@ -58,8 +59,11 @@ type StatusSource interface {
 }
 
 type Server struct {
-	db      *index.DB
-	engine  *search.Engine
+	db *index.DB
+	// engine is swapped while serving: serve starts with the lexical ranker
+	// and adds the semantic one once the model has loaded, which can take
+	// fifteen seconds that nobody should have to wait through to browse.
+	engine  atomic.Pointer[search.Engine]
 	indexer StatusSource
 	cache   *sessionCache
 	opts    Options
@@ -79,16 +83,20 @@ func New(db *index.DB, engine *search.Engine, opts Options) (*Server, error) {
 	}
 	s := &Server{
 		db:      db,
-		engine:  engine,
 		indexer: opts.Indexer,
 		cache:   newSessionCache(defaultCacheSize),
 		opts:    opts,
 	}
+	s.engine.Store(engine)
 	if _, err := s.templates(); err != nil {
 		return nil, err
 	}
 	return s, nil
 }
+
+// SetEngine replaces the search engine for every later request. A request
+// already searching finishes with the engine it started with.
+func (s *Server) SetEngine(e *search.Engine) { s.engine.Store(e) }
 
 // funcs are the helpers templates may call.
 var funcs = template.FuncMap{

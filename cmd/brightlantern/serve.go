@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"os/signal"
 	"runtime"
+	"sync"
 	"syscall"
 	"time"
 
@@ -37,22 +38,11 @@ func runServe(dbPath, addr string, dirs []string, dev, launchBrowser, noWatch bo
 		return err
 	}
 
-	// The server only reads. Semantic support is preferred because queries
-	// need the model to embed, but browsing and keyword search work without
-	// it, so a machine that cannot load the model still gets a usable
-	// interface.
-	driver := index.DriverName
-	if err := index.RegisterSemanticDriver(embed.DefaultPaths()); err == nil {
-		driver = index.SemanticDriverName
-	}
-	stop := noteSlowModelLoad()
-	db, err := index.OpenReader(dbPath, driver)
-	stop()
-	if err != nil && driver != index.DriverName {
-		note("semantic search unavailable: %v", err)
-		driver = index.DriverName
-		db, err = index.OpenReader(dbPath, driver)
-	}
+	// The page comes up on the lexical driver. Browsing and keyword search
+	// need no model, and loading one can take fifteen seconds on a cold Metal
+	// cache (#56) -- which under KeepAlive is a restarted daemon refusing
+	// connections. The model loads behind the page, in warm.
+	db, err := index.OpenReader(dbPath, index.DriverName)
 	if err != nil {
 		return err
 	}
@@ -66,26 +56,19 @@ func runServe(dbPath, addr string, dirs []string, dev, launchBrowser, noWatch bo
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	// A writer, separate from the read pool above. WAL lets handlers read a
-	// consistent snapshot while this one indexes, so a reindex triggered by a
-	// conversation in another terminal never blocks a request.
-	live, closeLive := startIndexer(ctx, dbPath, driver, dirs, noWatch, titlesVia)
-	if closeLive != nil {
-		defer closeLive()
+	opts := web.Options{Dev: dev, Version: Version, IndexPath: dbPath}
+	var status *pendingStatus
+	if !noWatch {
+		status = &pendingStatus{}
+		opts.Indexer = status
 	}
-
-	srv, err := web.New(db, buildEngine(db, driver), web.Options{
-		Dev:       dev,
-		Indexer:   live,
-		Version:   Version,
-		IndexPath: dbPath,
-	})
+	srv, err := web.New(db, buildEngine(db, index.DriverName), opts)
 	if err != nil {
 		return err
 	}
 
-	// Announced only now, though the socket has been bound since the top, so
-	// the printed URL is one that answers and --open cannot race it.
+	// The socket has been bound since the top, so the printed URL is one that
+	// answers and --open cannot race it.
 	url := "http://" + ln.Addr().String()
 	// The subcommands are not visible on a bare `brightlantern`, which is now the
 	// usual way to run it. One line restores them without anyone reading usage
@@ -103,6 +86,10 @@ func runServe(dbPath, addr string, dirs []string, dev, launchBrowser, noWatch bo
 	errc := make(chan error, 1)
 	go func() { errc <- httpSrv.Serve(ln) }()
 
+	var bg closers
+	defer bg.close()
+	go warm(ctx, srv, status, &bg, dbPath, dirs, titlesVia)
+
 	select {
 	case err := <-errc:
 		if errors.Is(err, http.ErrServerClosed) {
@@ -117,6 +104,110 @@ func runServe(dbPath, addr string, dirs []string, dev, launchBrowser, noWatch bo
 	}
 }
 
+// warm does everything slow that serve needs, behind a page that is already
+// answering: load the model into a reader pool and swap semantic search in,
+// then open the writer and start indexing.
+//
+// In that order, and not concurrently. The first connection compiles the
+// Metal shaders and every later one hits the cache, so the writer opened
+// second loads in well under a second -- two at once would compile twice.
+// Search comes first because it is what someone at the page is waiting for;
+// the indexer only has to catch up with sessions written while it was down.
+//
+// A nil status means --no-watch: search still warms, nothing indexes.
+func warm(ctx context.Context, srv *web.Server, status *pendingStatus, bg *closers,
+	dbPath string, dirs []string, titlesVia string) {
+	driver := index.DriverName
+	if err := index.RegisterSemanticDriver(embed.DefaultPaths()); err == nil {
+		stop := slowNote(2*time.Second, "loading the embedding model; search is keyword-only "+
+			"until it finishes. llama.cpp is compiling Metal shaders, which takes about "+
+			"15s the first time and is then cached")
+		sem, err := index.OpenReader(dbPath, index.SemanticDriverName)
+		stop()
+		if err != nil {
+			note("semantic search unavailable: %v", err)
+		} else if !bg.add(func() { sem.Close() }) {
+			return // shut down while the model loaded
+		} else {
+			driver = index.SemanticDriverName
+			srv.SetEngine(buildEngine(sem, driver))
+		}
+	}
+
+	if status == nil {
+		return
+	}
+	// A writer, separate from the read pools. WAL lets handlers read a
+	// consistent snapshot while this one indexes, so a reindex triggered by a
+	// conversation in another terminal never blocks a request.
+	live, closeLive := startIndexer(ctx, dbPath, driver, dirs, titlesVia)
+	if closeLive != nil && !bg.add(closeLive) {
+		return
+	}
+	status.set(live)
+}
+
+// pendingStatus is the indexer as the page sees it before the indexer
+// exists. Reporting "starting" rather than nothing matters: an empty /status
+// removes the header's poller, and the page would never notice the indexer
+// arriving.
+type pendingStatus struct {
+	mu      sync.Mutex
+	src     web.StatusSource
+	settled bool
+}
+
+func (p *pendingStatus) set(src web.StatusSource) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.src, p.settled = src, true
+}
+
+func (p *pendingStatus) Status() indexer.Status {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	switch {
+	case p.src != nil:
+		return p.src.Status()
+	case p.settled:
+		// startIndexer gave up and said why on stderr.
+		return indexer.Status{Phase: indexer.PhaseStopped, LastErr: "live indexing is disabled; see the server's log"}
+	default:
+		return indexer.Status{Phase: indexer.PhaseStarting}
+	}
+}
+
+// closers collects what warm opened, for serve to close on the way out.
+// Closing is final: anything added afterwards is closed on the spot and
+// reported, so a model that finishes loading during shutdown is not leaked
+// into a process that is exiting -- and, more to the point, is not handed to
+// a server that has stopped.
+type closers struct {
+	mu     sync.Mutex
+	fns    []func()
+	closed bool
+}
+
+func (c *closers) add(fn func()) bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.closed {
+		fn()
+		return false
+	}
+	c.fns = append(c.fns, fn)
+	return true
+}
+
+func (c *closers) close() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.closed = true
+	for i := len(c.fns) - 1; i >= 0; i-- {
+		c.fns[i]()
+	}
+}
+
 // bootstrapIndex creates an empty index when there is none.
 //
 // The read pool below is _query_only, which cannot create a schema, so
@@ -126,9 +217,9 @@ func runServe(dbPath, addr string, dirs []string, dev, launchBrowser, noWatch bo
 // already does the thing it was refusing to start without. The only reason it
 // could not bootstrap itself was the order the two handles were opened in.
 //
-// Creating it here rather than reordering so that startIndexer runs first:
-// --no-watch makes that function return immediately, and a scripted run against
-// a fresh index is exactly where that path is used.
+// Creating it here rather than waiting for startIndexer: that runs behind the
+// page, after the model loads, and not at all under --no-watch -- and a
+// scripted run against a fresh index is exactly where that flag is used.
 //
 // The lexical driver, whatever the server will use: this needs the schema and
 // nothing else, and opening a semantic connection would load a second copy of
@@ -157,11 +248,7 @@ func bootstrapIndex(dbPath string) error {
 // Failure here is not fatal. The server's job is to show what is already
 // indexed, and a second brightlantern holding the write lock, or a read-only
 // filesystem, should cost live updates rather than the whole interface.
-func startIndexer(ctx context.Context, dbPath, driver string, dirs []string, noWatch bool, titlesVia string) (web.StatusSource, func()) {
-	if noWatch {
-		return nil, nil
-	}
-
+func startIndexer(ctx context.Context, dbPath, driver string, dirs []string, titlesVia string) (web.StatusSource, func()) {
 	writer, err := index.Open(dbPath, driver)
 	if err != nil {
 		note("live indexing disabled: %v", err)

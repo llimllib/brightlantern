@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/llimllib/brightlantern/internal/index"
+	"github.com/llimllib/brightlantern/internal/indexer"
 )
 
 // serve used to refuse to start without an index, so the check that matters is
@@ -91,5 +92,51 @@ func TestCommandDefaultsToServe(t *testing.T) {
 			t.Errorf("command(%q) = %q, %q; want %q, %q",
 				tc.argv, cmd, args, tc.wantCmd, tc.wantArgs)
 		}
+	}
+}
+
+// Before the indexer exists the page must see "starting", not nothing: an
+// empty /status removes the header's poller, and the page would then never
+// notice the indexer arriving.
+func TestPendingStatus(t *testing.T) {
+	var p pendingStatus
+	if got := p.Status().Phase; got != indexer.PhaseStarting {
+		t.Errorf("before set: phase = %q, want %q", got, indexer.PhaseStarting)
+	}
+
+	p.set(fixedStatus{Phase: indexer.PhaseWatching, Sessions: 7})
+	if got := p.Status(); got.Phase != indexer.PhaseWatching || got.Sessions != 7 {
+		t.Errorf("after set: status = %+v, want the indexer's own", got)
+	}
+
+	var failed pendingStatus
+	failed.set(nil) // startIndexer could not open a writer
+	if got := failed.Status(); got.Phase != indexer.PhaseStopped || got.LastErr == "" {
+		t.Errorf("after a failed start: status = %+v, want stopped with a reason", got)
+	}
+}
+
+type fixedStatus indexer.Status
+
+func (f fixedStatus) Status() indexer.Status { return indexer.Status(f) }
+
+// Something warm opens after serve has begun shutting down is closed on the
+// spot rather than kept, and warm is told to stop.
+func TestClosersAfterCloseCloseImmediately(t *testing.T) {
+	var c closers
+	var order []string
+	c.add(func() { order = append(order, "a") })
+	c.add(func() { order = append(order, "b") })
+	c.close()
+	if !slices.Equal(order, []string{"b", "a"}) {
+		t.Errorf("closed in order %v, want reverse of opening", order)
+	}
+
+	late := false
+	if c.add(func() { late = true }) {
+		t.Error("add after close reported success")
+	}
+	if !late {
+		t.Error("add after close did not close what it was given")
 	}
 }
