@@ -1,6 +1,6 @@
-// Package config reads and writes spireweb's settings file.
+// Package config reads and writes brightlantern's settings file.
 //
-// The file exists so that spireweb can be run with no arguments and keep doing
+// The file exists so that brightlantern can be run with no arguments and keep doing
 // the same thing tomorrow. Detection (session.Detect) answers "what is on this
 // machine" every time it is asked, and the answer can change: install pi to try
 // it once and the corpus silently doubles; move ~/.claude and the index empties
@@ -38,19 +38,19 @@ type Config struct {
 // Path is where the settings file lives.
 //
 // XDG rather than ~/Library/Application Support, even on macOS, because that
-// is already this project's convention: mise.toml sets SPIREWEB_DATA_DIR to
-// ~/.local/share/spireweb and embed.DefaultPaths falls back to the same. Using
+// is already this project's convention: mise.toml sets BRIGHTLANTERN_DATA_DIR to
+// ~/.local/share/brightlantern and embed.DefaultPaths falls back to the same. Using
 // os.UserConfigDir would put the two halves of one install on different
 // schemes for no gain.
 func Path() string {
 	if d := os.Getenv("XDG_CONFIG_HOME"); d != "" {
-		return filepath.Join(d, "spireweb", "config.toml")
+		return filepath.Join(d, "brightlantern", "config.toml")
 	}
 	home, err := os.UserHomeDir()
 	if err != nil {
-		return filepath.Join(".config", "spireweb", "config.toml")
+		return filepath.Join(".config", "brightlantern", "config.toml")
 	}
-	return filepath.Join(home, ".config", "spireweb", "config.toml")
+	return filepath.Join(home, ".config", "brightlantern", "config.toml")
 }
 
 // Load reads the settings file.
@@ -88,7 +88,7 @@ func (c Config) Save() error { return c.SaveTo(Path()) }
 //
 // Written by hand rather than through toml.Encode so that it can carry
 // comments. This is a file whose whole purpose is to be opened and read by
-// someone wondering what spireweb decided, and an uncommented list of paths
+// someone wondering what brightlantern decided, and an uncommented list of paths
 // answers "what" without ever answering "why".
 func (c Config) SaveTo(path string) error {
 	if dir := filepath.Dir(path); dir != "" && dir != "." {
@@ -98,9 +98,9 @@ func (c Config) SaveTo(path string) error {
 	}
 
 	var b strings.Builder
-	b.WriteString("# spireweb settings. Delete a line to have spireweb work it out again.\n\n")
+	b.WriteString("# brightlantern settings. Delete a line to have brightlantern work it out again.\n\n")
 
-	b.WriteString("# Session directories, found on this machine when spireweb first ran.\n")
+	b.WriteString("# Session directories, found on this machine when brightlantern first ran.\n")
 	b.WriteString("# Written down rather than detected every time, so that installing\n")
 	b.WriteString("# another agent does not silently change what is indexed.\n")
 	b.WriteString("dirs = [\n")

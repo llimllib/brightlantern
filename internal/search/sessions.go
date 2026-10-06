@@ -7,7 +7,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/llimllib/spireweb/internal/index"
+	"github.com/llimllib/brightlantern/internal/index"
 )
 
 // SessionResult is a search hit rolled up to the session that contains it.

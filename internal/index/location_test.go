@@ -8,12 +8,12 @@ import (
 
 func TestDefaultPathFollowsXDG(t *testing.T) {
 	t.Setenv("XDG_DATA_HOME", "/xdg/data")
-	if got, want := DefaultPath(), "/xdg/data/spireweb/index.db"; got != want {
+	if got, want := DefaultPath(), "/xdg/data/brightlantern/index.db"; got != want {
 		t.Errorf("DefaultPath = %q, want %q", got, want)
 	}
 	t.Setenv("XDG_DATA_HOME", "")
 	t.Setenv("HOME", "/home/me")
-	if got, want := DefaultPath(), "/home/me/.local/share/spireweb/index.db"; got != want {
+	if got, want := DefaultPath(), "/home/me/.local/share/brightlantern/index.db"; got != want {
 		t.Errorf("DefaultPath = %q, want %q", got, want)
 	}
 }
@@ -21,7 +21,7 @@ func TestDefaultPathFollowsXDG(t *testing.T) {
 // legacyIndex puts a real index, archive and all, where v0.0.2 kept one.
 func legacyIndex(t *testing.T) (legacy, dst string) {
 	t.Helper()
-	legacy = filepath.Join(t.TempDir(), "Caches", "spireweb", "index.db")
+	legacy = filepath.Join(t.TempDir(), "Caches", "brightlantern", "index.db")
 	if err := os.MkdirAll(filepath.Dir(legacy), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -32,7 +32,7 @@ func legacyIndex(t *testing.T) (legacy, dst string) {
 	if err := os.WriteFile(legacy, b, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	return legacy, filepath.Join(t.TempDir(), "share", "spireweb", "index.db")
+	return legacy, filepath.Join(t.TempDir(), "share", "brightlantern", "index.db")
 }
 
 // Upgrading must find the old index rather than rebuild one, and must get it
@@ -57,7 +57,7 @@ func TestRelocateMovesTheOldIndex(t *testing.T) {
 	}
 }
 
-// A spireweb still running from before the upgrade has it open. Moving it
+// A brightlantern still running from before the upgrade has it open. Moving it
 // under that process would split it in two.
 func TestRelocateLeavesAnIndexInUse(t *testing.T) {
 	legacy, dst := legacyIndex(t)

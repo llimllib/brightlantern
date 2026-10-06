@@ -21,7 +21,7 @@ func install(t *testing.T, dir string) {
 func TestDefaultPathsPrefersAnInstallThatExists(t *testing.T) {
 	dir := t.TempDir()
 	install(t, dir)
-	t.Setenv("SPIREWEB_DATA_DIR", dir)
+	t.Setenv("BRIGHTLANTERN_DATA_DIR", dir)
 
 	p := DefaultPaths()
 	if p.Extension != filepath.Join(dir, extensionFile()) {
@@ -36,13 +36,13 @@ func TestDefaultPathsPrefersAnInstallThatExists(t *testing.T) {
 // run setup' fills, because the error names it and that is the whole value of
 // the message.
 //
-// HOME is redirected as well as SPIREWEB_DATA_DIR: the machine running this
-// very likely has a real install in ~/.local/share/spireweb, which would
+// HOME is redirected as well as BRIGHTLANTERN_DATA_DIR: the machine running this
+// very likely has a real install in ~/.local/share/brightlantern, which would
 // satisfy DefaultPaths and make the test assert nothing.
 func TestDefaultPathsFallsBackToTheDevelopmentLocation(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
-	t.Setenv("SPIREWEB_DATA_DIR", t.TempDir()) // exists, but empty
+	t.Setenv("BRIGHTLANTERN_DATA_DIR", t.TempDir()) // exists, but empty
 
 	p := DefaultPaths()
 	err := p.Check()
@@ -50,7 +50,7 @@ func TestDefaultPathsFallsBackToTheDevelopmentLocation(t *testing.T) {
 		t.Fatal("Check() = nil, want an error naming where to install")
 	}
 
-	want := filepath.Join(home, ".local", "share", "spireweb")
+	want := filepath.Join(home, ".local", "share", "brightlantern")
 	if filepath.Dir(p.Extension) != want {
 		t.Errorf("fell back to %q, want %q", filepath.Dir(p.Extension), want)
 	}
@@ -60,7 +60,7 @@ func TestDefaultPathsFallsBackToTheDevelopmentLocation(t *testing.T) {
 }
 
 // The release layout: extension and model beside the binary. A Homebrew cask
-// stages the archive and symlinks only spireweb onto PATH, so this is the only
+// stages the archive and symlinks only brightlantern onto PATH, so this is the only
 // way the sibling files are found.
 func TestCandidateDirsIncludesTheResolvedExecutablesDirectory(t *testing.T) {
 	exe, err := os.Executable()
@@ -80,11 +80,11 @@ func TestCandidateDirsIncludesTheResolvedExecutablesDirectory(t *testing.T) {
 	t.Errorf("candidateDirs() = %v, want it to include %q", candidateDirs(), want)
 }
 
-// SPIREWEB_DATA_DIR is how mise points a development build at a shared install,
+// BRIGHTLANTERN_DATA_DIR is how mise points a development build at a shared install,
 // so it has to win over a stray file next to the binary.
 func TestCandidateDirsPutsTheEnvironmentFirst(t *testing.T) {
 	dir := t.TempDir()
-	t.Setenv("SPIREWEB_DATA_DIR", dir)
+	t.Setenv("BRIGHTLANTERN_DATA_DIR", dir)
 
 	got := candidateDirs()
 	if len(got) == 0 || got[0] != dir {

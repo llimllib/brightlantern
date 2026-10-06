@@ -1,4 +1,4 @@
-module github.com/llimllib/spireweb
+module github.com/llimllib/brightlantern
 
 go 1.26.5
 

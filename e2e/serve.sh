@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Starts spireweb over the committed fixture sessions, for Playwright.
+# Starts brightlantern over the committed fixture sessions, for Playwright.
 #
 # Playwright's webServer waits for the port, so this has to end in the server
 # and not in a subshell. It builds its own index rather than touching the real
@@ -16,13 +16,13 @@ cd "$root"
 # mean testing the previous version of the keyboard handling.
 pnpm exec tsc
 
-go build -o spireweb ./cmd/spireweb
+go build -o brightlantern ./cmd/brightlantern
 
 # A fresh index per run, in a temp directory, so nothing accumulates and a
 # failed run cannot poison the next one.
 db="$(mktemp -d)/e2e.db"
-./spireweb index --db "$db" --dir e2e/sessions --lexical --no-titles >/dev/null
+./brightlantern index --db "$db" --dir e2e/sessions --lexical --no-titles >/dev/null
 
 # --no-watch: the fixtures do not change while the suite runs, and the watcher
 # would hold the write lock for no reason.
-exec ./spireweb serve --db "$db" --dir e2e/sessions --addr "127.0.0.1:$port" --no-watch
+exec ./brightlantern serve --db "$db" --dir e2e/sessions --addr "127.0.0.1:$port" --no-watch

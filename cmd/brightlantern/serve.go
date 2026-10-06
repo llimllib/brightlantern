@@ -13,13 +13,13 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/llimllib/spireweb/internal/config"
-	"github.com/llimllib/spireweb/internal/embed"
-	"github.com/llimllib/spireweb/internal/index"
-	"github.com/llimllib/spireweb/internal/indexer"
-	"github.com/llimllib/spireweb/internal/search"
-	"github.com/llimllib/spireweb/internal/titles"
-	"github.com/llimllib/spireweb/internal/web"
+	"github.com/llimllib/brightlantern/internal/config"
+	"github.com/llimllib/brightlantern/internal/embed"
+	"github.com/llimllib/brightlantern/internal/index"
+	"github.com/llimllib/brightlantern/internal/indexer"
+	"github.com/llimllib/brightlantern/internal/search"
+	"github.com/llimllib/brightlantern/internal/titles"
+	"github.com/llimllib/brightlantern/internal/web"
 )
 
 func runServe(dbPath, addr string, dirs []string, dev, launchBrowser, noWatch bool, titlesVia string) error {
@@ -76,11 +76,11 @@ func runServe(dbPath, addr string, dirs []string, dev, launchBrowser, noWatch bo
 		return err
 	}
 	url := "http://" + ln.Addr().String()
-	// The subcommands are not visible on a bare `spireweb`, which is now the
+	// The subcommands are not visible on a bare `brightlantern`, which is now the
 	// usual way to run it. One line restores them without anyone reading usage
 	// they did not ask for.
-	fmt.Printf("spireweb %s serving %d sessions on %s\n", Version, n, url)
-	fmt.Println("'spireweb help' lists the other commands")
+	fmt.Printf("brightlantern %s serving %d sessions on %s\n", Version, n, url)
+	fmt.Println("'brightlantern help' lists the other commands")
 	if dev {
 		fmt.Println("dev mode: templates and static files reload from disk")
 	}
@@ -110,7 +110,7 @@ func runServe(dbPath, addr string, dirs []string, dev, launchBrowser, noWatch bo
 //
 // The read pool below is _query_only, which cannot create a schema, so
 // something has to have made one first. That used to be an error telling the
-// reader to go and run 'spireweb index' -- accurate, and backwards: serve opens
+// reader to go and run 'brightlantern index' -- accurate, and backwards: serve opens
 // a writer a few lines further down and runs a catch-up build through it, so it
 // already does the thing it was refusing to start without. The only reason it
 // could not bootstrap itself was the order the two handles were opened in.
@@ -144,7 +144,7 @@ func bootstrapIndex(dbPath string) error {
 // startIndexer opens a writer and keeps the index current in the background.
 //
 // Failure here is not fatal. The server's job is to show what is already
-// indexed, and a second spireweb holding the write lock, or a read-only
+// indexed, and a second brightlantern holding the write lock, or a read-only
 // filesystem, should cost live updates rather than the whole interface.
 func startIndexer(ctx context.Context, dbPath, driver string, dirs []string, noWatch bool, titlesVia string) (web.StatusSource, func()) {
 	if noWatch {
@@ -171,7 +171,7 @@ func startIndexer(ctx context.Context, dbPath, driver string, dirs []string, noW
 		if e, err := embed.New(writer.SQL(), embed.DefaultPaths()); err != nil {
 			note("new sessions will be indexed without embeddings: %v", err)
 		} else if err := writer.EnsureVectorTable(e.Dim()); err != nil {
-			// An index built by 'spireweb index' already has this table, which
+			// An index built by 'brightlantern index' already has this table, which
 			// is why nothing missed it -- but serve can now be the first thing
 			// to touch a new index, and then there is nowhere to put a vector.
 			note("new sessions will be indexed without embeddings: %v", err)

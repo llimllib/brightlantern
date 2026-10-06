@@ -5,7 +5,7 @@ import (
 	"errors"
 	"sync"
 
-	"github.com/llimllib/spireweb/internal/index"
+	"github.com/llimllib/brightlantern/internal/index"
 )
 
 // DefaultConcurrency is how many summaries are in flight at once.

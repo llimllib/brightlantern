@@ -27,12 +27,12 @@ func writeClaude(t *testing.T, lines ...string) *Session {
 
 const (
 	claudeUser = `{"type":"user","sessionId":"5b8b4bea-6e18-4ebe-8c31-3e7133e1d730",` +
-		`"timestamp":"2026-09-11T13:35:05.056Z","cwd":"/Users/x/code/spireweb",` +
+		`"timestamp":"2026-09-11T13:35:05.056Z","cwd":"/Users/x/code/brightlantern",` +
 		`"version":"2.1.83","entrypoint":"cli","gitBranch":"main",` +
 		`"message":{"role":"user","content":[{"type":"text","text":"how do I pin a dependency"}]}}`
 
 	claudeAssistant = `{"type":"assistant","sessionId":"5b8b4bea-6e18-4ebe-8c31-3e7133e1d730",` +
-		`"timestamp":"2026-09-11T13:35:09.000Z","cwd":"/Users/x/code/spireweb","entrypoint":"cli",` +
+		`"timestamp":"2026-09-11T13:35:09.000Z","cwd":"/Users/x/code/brightlantern","entrypoint":"cli",` +
 		`"message":{"role":"assistant","content":[{"type":"text","text":"Pin it in the lockfile."}]}}`
 )
 
@@ -44,7 +44,7 @@ func TestParseClaudeReadsMetadataFromTheFirstRecord(t *testing.T) {
 	if s.ID != "5b8b4bea-6e18-4ebe-8c31-3e7133e1d730" {
 		t.Errorf("ID = %q", s.ID)
 	}
-	if s.CWD != "/Users/x/code/spireweb" {
+	if s.CWD != "/Users/x/code/brightlantern" {
 		t.Errorf("CWD = %q", s.CWD)
 	}
 	if s.StartedAt.IsZero() {

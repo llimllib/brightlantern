@@ -257,7 +257,7 @@ func TestMergeRefusesWhatItCannotRead(t *testing.T) {
 		t.Fatal(err)
 	}
 	if _, err := Merge(ctx, a.db, junk, MergeOptions{}); err == nil ||
-		!strings.Contains(err.Error(), "not a spireweb index") {
+		!strings.Contains(err.Error(), "not a brightlantern index") {
 		t.Errorf("empty file: err = %v", err)
 	}
 

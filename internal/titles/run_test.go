@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/llimllib/spireweb/internal/index"
+	"github.com/llimllib/brightlantern/internal/index"
 )
 
 const hdr = `{"type":"session","version":3,"id":"%s","timestamp":"2026-03-31T12:26:0%d.000Z","cwd":"/Users/me/code/proj"}`

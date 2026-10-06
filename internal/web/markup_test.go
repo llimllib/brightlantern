@@ -93,7 +93,7 @@ func TestEmptyIndexOffersTheFix(t *testing.T) {
 	}
 	// A command the reader can run, marked up as one rather than rendered as
 	// literal backticks.
-	if got := blank.Find("code").Text(); got != "spireweb index" {
+	if got := blank.Find("code").Text(); got != "brightlantern index" {
 		t.Errorf("empty state code = %q, want the command to run", got)
 	}
 }

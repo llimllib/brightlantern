@@ -7,7 +7,7 @@ import { defineConfig, devices } from "@playwright/test";
 // to a ClickHouse server held it. With reuseExistingServer on, the whole suite
 // ran against ClickHouse's landing page and failed as if every selector had
 // broken.
-const port = Number(process.env.SPIREWEB_E2E_PORT ?? 18123);
+const port = Number(process.env.BRIGHTLANTERN_E2E_PORT ?? 18123);
 const baseURL = `http://127.0.0.1:${port}`;
 
 export default defineConfig({
@@ -37,7 +37,7 @@ export default defineConfig({
     command: `./e2e/serve.sh ${port}`,
     // Readiness is judged by this URL answering, and so is "a server is
     // already running" when reuseExistingServer is on. / is answered by
-    // anything listening on the port; app.js only by spireweb, so a stranger
+    // anything listening on the port; app.js only by brightlantern, so a stranger
     // on the port is not mistaken for it and serve.sh fails loudly on the
     // bind instead.
     url: `${baseURL}/static/app.js`,

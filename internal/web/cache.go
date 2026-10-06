@@ -5,7 +5,7 @@ import (
 	"os"
 	"sync"
 
-	"github.com/llimllib/spireweb/internal/session"
+	"github.com/llimllib/brightlantern/internal/session"
 )
 
 // sessionCache holds recently parsed sessions.

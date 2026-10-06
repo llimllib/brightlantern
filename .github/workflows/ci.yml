@@ -60,7 +60,7 @@ jobs:
       # where a missing FTS5 build tag or a broken embed directive shows up,
       # neither of which any test would catch.
       - name: Smoke test
-        run: ./spireweb info
+        run: ./brightlantern info
 
       # Playwright's browsers are a download into a shared cache, not a
       # repository dependency, so they have to be asked for explicitly. Keyed

@@ -4,7 +4,7 @@ import (
 	"net/http"
 	"strconv"
 
-	"github.com/llimllib/spireweb/internal/indexer"
+	"github.com/llimllib/brightlantern/internal/indexer"
 )
 
 // Poll intervals. Busy is often enough to look live during a build; idle is

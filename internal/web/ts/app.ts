@@ -97,7 +97,7 @@ function toggleHelp(): void {
  */
 function scrollKey(): string {
   const q = new URLSearchParams(location.search).get("q") ?? "";
-  return `spireweb:list-scroll:${q}`;
+  return `brightlantern:list-scroll:${q}`;
 }
 
 function saveScroll(): void {

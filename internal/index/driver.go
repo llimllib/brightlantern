@@ -20,7 +20,7 @@ import (
 	sqlite_vec "github.com/asg017/sqlite-vec-go-bindings/cgo"
 	"github.com/mattn/go-sqlite3"
 
-	"github.com/llimllib/spireweb/internal/embed"
+	"github.com/llimllib/brightlantern/internal/embed"
 )
 
 // DriverName is the driver for lexical-only use.

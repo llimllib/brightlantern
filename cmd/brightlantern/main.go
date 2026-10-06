@@ -1,4 +1,4 @@
-// Command spireweb indexes and browses pi agent sessions.
+// Command brightlantern indexes and browses coding agent sessions.
 package main
 
 import (
@@ -14,29 +14,29 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/llimllib/spireweb/internal/config"
-	"github.com/llimllib/spireweb/internal/embed"
-	"github.com/llimllib/spireweb/internal/index"
-	"github.com/llimllib/spireweb/internal/session"
-	"github.com/llimllib/spireweb/internal/titles"
+	"github.com/llimllib/brightlantern/internal/config"
+	"github.com/llimllib/brightlantern/internal/embed"
+	"github.com/llimllib/brightlantern/internal/index"
+	"github.com/llimllib/brightlantern/internal/session"
+	"github.com/llimllib/brightlantern/internal/titles"
 )
 
 // Version is stamped in at build time by `mise run build`.
 var Version = "dev"
 
-const usage = `spireweb - search and read pi agent sessions
+const usage = `brightlantern - search and read coding agent sessions
 
 usage:
-  spireweb [flags]         browse sessions in a web interface (same as serve)
-  spireweb serve [flags]   the same, named explicitly
-  spireweb index [flags]   build or update the search index
-  spireweb merge [flags] OTHER.db
+  brightlantern [flags]         browse sessions in a web interface (same as serve)
+  brightlantern serve [flags]   the same, named explicitly
+  brightlantern index [flags]   build or update the search index
+  brightlantern merge [flags] OTHER.db
                            fold another machine's index into this one
-  spireweb stats [flags]   report what is in the index
-  spireweb doctor [flags]  check the index for inconsistencies
-  spireweb info            show paths and configuration
-  spireweb version
-  spireweb help
+  brightlantern stats [flags]   report what is in the index
+  brightlantern doctor [flags]  check the index for inconsistencies
+  brightlantern info            show paths and configuration
+  brightlantern version
+  brightlantern help
 
 flags:
   --db PATH      index location (default %s)
@@ -57,12 +57,12 @@ flags:
 
 // command splits the subcommand from its flags, defaulting to serve.
 //
-// There is no second thing a bare `spireweb` could plausibly mean: index is a
+// There is no second thing a bare `brightlantern` could plausibly mean: index is a
 // step on the way to serving, stats and doctor are diagnostics, and nobody's
-// first intent is to read usage. `brew install spireweb && spireweb` is what
+// first intent is to read usage. `brew install brightlantern && brightlantern` is what
 // the install is for.
 //
-// A leading flag is not a subcommand, so `spireweb --addr :9000` serves on that
+// A leading flag is not a subcommand, so `brightlantern --addr :9000` serves on that
 // address rather than complaining about an unknown command. That is the reason
 // this is a function rather than a length check: the flags have to be parsed
 // after deciding there is no subcommand, not before.
@@ -112,7 +112,7 @@ func main() {
 	case "merge":
 		_ = fs.Parse(args)
 		if fs.NArg() != 1 {
-			fmt.Fprintln(os.Stderr, "usage: spireweb merge [--db PATH] [--lexical] OTHER.db")
+			fmt.Fprintln(os.Stderr, "usage: brightlantern merge [--db PATH] [--lexical] OTHER.db")
 			os.Exit(2)
 		}
 		err = runMerge(configuredDB(givenFlags(fs), *dbPath), fs.Arg(0), *lexical)
@@ -126,7 +126,7 @@ func main() {
 		_ = fs.Parse(args)
 		err = runInfo(configuredDB(givenFlags(fs), *dbPath), dirs)
 	case "version":
-		fmt.Println("spireweb", Version)
+		fmt.Println("brightlantern", Version)
 	case "help":
 		// Asked for, so stdout and a success exit; the same text reaches
 		// stderr with status 2 when it is a complaint about the arguments.
@@ -283,7 +283,7 @@ func runIndex(dbPath string, dirs []string, full, lexical bool, titleLimit int, 
 		// corpus that is mostly excluded is a surprising thing to discover from
 		// a session count that looks too low.
 		note("excluded %d files driven through the SDK rather than typed "+
-			"(claude-bridge duplicates, and spireweb's own title prompts)", p.Excluded)
+			"(claude-bridge duplicates, and brightlantern's own title prompts)", p.Excluded)
 	}
 	if embedder == nil {
 		note("built without embeddings; search will be keyword-only")
@@ -337,7 +337,7 @@ func runMerge(dbPath, other string, lexical bool) error {
 	fmt.Printf("copied %d messages and %d titles, wrote %d chunks\n", rep.Messages, rep.Titles, rep.Chunks)
 	if rep.Unarchived > 0 {
 		note("%d sessions there predate its message archive and were skipped; "+
-			"run 'spireweb index' on that machine first", rep.Unarchived)
+			"run 'brightlantern index' on that machine first", rep.Unarchived)
 	}
 	for _, c := range rep.Conflicts {
 		note("skipped %s: its path belongs to a different session here", c)
@@ -530,7 +530,7 @@ func runDoctor(dbPath string) error {
 	}
 	hasVec, hasMessages := has("chunks_vec"), has("messages")
 	if !hasMessages {
-		note("no message archive in this index; run 'spireweb index' to build one")
+		note("no message archive in this index; run 'brightlantern index' to build one")
 	}
 
 	checks := []struct{ name, sql string }{
@@ -578,7 +578,7 @@ func runDoctor(dbPath string) error {
 		fmt.Printf("%-26s %7d  %s\n", c.name, n, status)
 	}
 	if bad > 0 {
-		return fmt.Errorf("%d checks failed; rebuild with 'spireweb index --full'", bad)
+		return fmt.Errorf("%d checks failed; rebuild with 'brightlantern index --full'", bad)
 	}
 	return nil
 }
@@ -589,7 +589,7 @@ func runDoctor(dbPath string) error {
 // found" is the answer it exists to give.
 func runInfo(dbPath string, flagged dirList) error {
 	paths := embed.DefaultPaths()
-	fmt.Printf("spireweb %s (%s %s/%s)\n\n", Version, runtime.Version(), runtime.GOOS, runtime.GOARCH)
+	fmt.Printf("brightlantern %s (%s %s/%s)\n\n", Version, runtime.Version(), runtime.GOOS, runtime.GOARCH)
 
 	// The same precedence the indexing commands apply, so that this reports
 	// what would actually happen rather than a second opinion about it. A
@@ -729,7 +729,7 @@ func resolve(given map[string]bool, flagged dirList, dbPath, addr, titleVia stri
 	if from == sourceDetected && !hadFile {
 		cfg.Dirs = s.dirs
 		if cfg.Titles == "" {
-			// What spireweb does today, written down rather than changed. A
+			// What brightlantern does today, written down rather than changed. A
 			// first run must not quietly turn titles off for someone who has
 			// ANTHROPIC_API_KEY set and has been getting them all along; the
 			// comments in the file are what tell a Claude Code user that
@@ -737,7 +737,7 @@ func resolve(given map[string]bool, flagged dirList, dbPath, addr, titleVia stri
 			cfg.Titles = config.TitlesAPI
 		}
 		if err := cfg.Save(); err != nil {
-			// Not fatal: spireweb works perfectly well without being able to
+			// Not fatal: brightlantern works perfectly well without being able to
 			// write its settings, it just works them out again next time.
 			note("could not write %s: %v", config.Path(), err)
 		} else {

@@ -10,7 +10,7 @@ import (
 
 	"github.com/fsnotify/fsnotify"
 
-	"github.com/llimllib/spireweb/internal/session"
+	"github.com/llimllib/brightlantern/internal/session"
 )
 
 // WatchSettle is how long to wait after the last filesystem event before

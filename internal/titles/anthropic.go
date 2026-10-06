@@ -85,7 +85,7 @@ func NewAnthropic() (*Anthropic, error) {
 	// gateway, a proxy, or a local fake usable without a build flag.
 	return &Anthropic{
 		APIKey:  key,
-		Model:   strings.TrimSpace(os.Getenv("SPIREWEB_TITLE_MODEL")),
+		Model:   strings.TrimSpace(os.Getenv("BRIGHTLANTERN_TITLE_MODEL")),
 		BaseURL: strings.TrimSpace(os.Getenv("ANTHROPIC_BASE_URL")),
 	}, nil
 }

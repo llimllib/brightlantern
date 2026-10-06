@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/llimllib/spireweb/internal/config"
-	"github.com/llimllib/spireweb/internal/index"
+	"github.com/llimllib/brightlantern/internal/config"
+	"github.com/llimllib/brightlantern/internal/index"
 )
 
 // sandbox redirects both the settings file and the probed session directories

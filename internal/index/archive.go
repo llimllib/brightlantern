@@ -8,7 +8,7 @@ import (
 	"os"
 	"time"
 
-	"github.com/llimllib/spireweb/internal/session"
+	"github.com/llimllib/brightlantern/internal/session"
 )
 
 // archiveMessages stores a session's messages verbatim, and returns how many

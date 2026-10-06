@@ -10,8 +10,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/llimllib/spireweb/internal/index"
-	"github.com/llimllib/spireweb/internal/titles"
+	"github.com/llimllib/brightlantern/internal/index"
+	"github.com/llimllib/brightlantern/internal/titles"
 )
 
 // Phase is what the indexer is doing.

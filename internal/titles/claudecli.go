@@ -40,7 +40,7 @@ type ClaudeCLI struct {
 // message at startup rather than one per session.
 func NewClaudeCLI() (*ClaudeCLI, error) {
 	bin := "claude"
-	if env := strings.TrimSpace(os.Getenv("SPIREWEB_CLAUDE_BIN")); env != "" {
+	if env := strings.TrimSpace(os.Getenv("BRIGHTLANTERN_CLAUDE_BIN")); env != "" {
 		bin = env
 	}
 	if _, err := exec.LookPath(bin); err != nil {
@@ -67,7 +67,7 @@ func (c *ClaudeCLI) Summarize(ctx context.Context, slice string) (string, error)
 	if dir == "" {
 		// A directory with nothing in it: no CLAUDE.md to discover, no
 		// project settings, nothing for the file tools to find interesting.
-		tmp, err := os.MkdirTemp("", "spireweb-titles-")
+		tmp, err := os.MkdirTemp("", "brightlantern-titles-")
 		if err != nil {
 			return "", err
 		}

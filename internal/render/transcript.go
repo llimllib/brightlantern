@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/llimllib/spireweb/internal/session"
+	"github.com/llimllib/brightlantern/internal/session"
 )
 
 // Entry kinds. A transcript is a flat sequence rather than a tree, because

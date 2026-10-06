@@ -46,7 +46,7 @@ func indexedIDs(t *testing.T, db *DB) map[string]bool {
 }
 
 // Only the interactive session is indexed. The other two are a bridge
-// duplicate of a pi session and one of spireweb's own title prompts.
+// duplicate of a pi session and one of brightlantern's own title prompts.
 func TestBuildExcludesSDKSessions(t *testing.T) {
 	dir := t.TempDir()
 	writeClaudeSession(t, dir, "interactive", "cli", "how do I pin a dependency")

@@ -16,7 +16,7 @@
 # upstream's prebuilt binary lacked.
 set -euo pipefail
 
-DATA_DIR="${SPIREWEB_DATA_DIR:-$HOME/.local/share/spireweb}"
+DATA_DIR="${BRIGHTLANTERN_DATA_DIR:-$HOME/.local/share/brightlantern}"
 MODEL="$DATA_DIR/all-MiniLM-L6-v2.Q8_0.gguf"
 SRC="$DATA_DIR/src/sqlite-lembed"
 
@@ -58,9 +58,9 @@ if [ ! -f "$EXT" ]; then
   # objects, which --depth 1 does not shrink much -- to produce a 3.2MB dylib.
   # Rebuilding from nothing takes about a minute and bumping the fork happens
   # approximately never, so keeping half a gigabyte around forever is the
-  # wrong trade. Set SPIREWEB_KEEP_SRC=1 when working on the extension itself.
-  if [ -z "${SPIREWEB_KEEP_SRC:-}" ]; then
-    echo "==> removing the build tree (SPIREWEB_KEEP_SRC=1 to keep it)"
+  # wrong trade. Set BRIGHTLANTERN_KEEP_SRC=1 when working on the extension itself.
+  if [ -z "${BRIGHTLANTERN_KEEP_SRC:-}" ]; then
+    echo "==> removing the build tree (BRIGHTLANTERN_KEEP_SRC=1 to keep it)"
     rm -rf "$DATA_DIR/src"
   fi
 fi

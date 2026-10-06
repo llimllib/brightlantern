@@ -9,7 +9,7 @@ import (
 	"path/filepath"
 	"strconv"
 
-	"github.com/llimllib/spireweb/internal/session"
+	"github.com/llimllib/brightlantern/internal/session"
 )
 
 // MergeOptions configures a Merge.
@@ -167,10 +167,10 @@ func checkMergeable(ctx context.Context, d *DB, otherPath string) error {
 	var tables int
 	if err := d.sql.QueryRowContext(ctx, `SELECT COUNT(*) FROM other.sqlite_master
 		WHERE type = 'table' AND name IN ('sessions', 'messages', 'meta')`).Scan(&tables); err != nil {
-		return fmt.Errorf("%s is not a spireweb index: %w", otherPath, err)
+		return fmt.Errorf("%s is not a brightlantern index: %w", otherPath, err)
 	}
 	if tables != 3 {
-		return fmt.Errorf("%s is not a spireweb index with a message archive", otherPath)
+		return fmt.Errorf("%s is not a brightlantern index with a message archive", otherPath)
 	}
 	var version string
 	err := d.sql.QueryRowContext(ctx,

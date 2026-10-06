@@ -43,7 +43,7 @@ import (
 
 	"github.com/mattn/go-sqlite3"
 
-	"github.com/llimllib/spireweb/internal/session"
+	"github.com/llimllib/brightlantern/internal/session"
 )
 
 // ModelName identifies the embedding model in index metadata. Changing the
@@ -162,11 +162,11 @@ const ModelFile = "all-MiniLM-L6-v2.Q8_0.gguf"
 // files, falling back to the development one so that a missing install reports
 // the path 'mise run setup' would fill.
 //
-// Two layouts have to work. A developer's is ~/.local/share/spireweb, written
+// Two layouts have to work. A developer's is ~/.local/share/brightlantern, written
 // by mise-tasks/setup. A release's is the extracted archive, where the
 // extension and model sit next to the binary -- which is also how a Homebrew
 // cask ends up: the cask stages the archive in the Caskroom and symlinks only
-// spireweb onto PATH, so the sibling files are reachable from the resolved
+// brightlantern onto PATH, so the sibling files are reachable from the resolved
 // executable and from nowhere else predictable.
 //
 // Resolving the executable rather than stamping a prefix in at build time means
@@ -195,7 +195,7 @@ func pathsIn(dir string) Paths {
 // error message wants to name.
 func candidateDirs() []string {
 	var dirs []string
-	if d := os.Getenv("SPIREWEB_DATA_DIR"); d != "" {
+	if d := os.Getenv("BRIGHTLANTERN_DATA_DIR"); d != "" {
 		dirs = append(dirs, d)
 	}
 	if exe, err := os.Executable(); err == nil {
@@ -207,7 +207,7 @@ func candidateDirs() []string {
 		dirs = append(dirs, filepath.Dir(exe))
 	}
 	if home, err := os.UserHomeDir(); err == nil {
-		dirs = append(dirs, filepath.Join(home, ".local", "share", "spireweb"))
+		dirs = append(dirs, filepath.Join(home, ".local", "share", "brightlantern"))
 	} else {
 		dirs = append(dirs, ".")
 	}

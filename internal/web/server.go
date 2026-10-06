@@ -18,10 +18,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/llimllib/spireweb/internal/index"
-	"github.com/llimllib/spireweb/internal/indexer"
-	"github.com/llimllib/spireweb/internal/render"
-	"github.com/llimllib/spireweb/internal/search"
+	"github.com/llimllib/brightlantern/internal/index"
+	"github.com/llimllib/brightlantern/internal/indexer"
+	"github.com/llimllib/brightlantern/internal/render"
+	"github.com/llimllib/brightlantern/internal/search"
 )
 
 //go:embed templates/*.html

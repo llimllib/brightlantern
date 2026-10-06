@@ -37,9 +37,9 @@ before:
     - mise run release-assets
 
 builds:
-  - id: spireweb
-    main: ./cmd/spireweb
-    binary: spireweb
+  - id: brightlantern
+    main: ./cmd/brightlantern
+    binary: brightlantern
     goos: [darwin]
     goarch: [arm64]
     env:
@@ -67,7 +67,7 @@ archives:
       - NOTICE.md
       # Flat, beside the binary, because that is where embed.DefaultPaths looks:
       # it resolves the executable and checks its own directory first. A
-      # Homebrew cask symlinks only spireweb onto PATH and leaves everything
+      # Homebrew cask symlinks only brightlantern onto PATH and leaves everything
       # else in the Caskroom, so resolving through the symlink is what finds
       # these.
       - src: build/lembed0.dylib
@@ -89,8 +89,8 @@ changelog:
 # was the preferred path when it was written; Homebrew has since moved prebuilt
 # binaries to casks, and llimllib/homebrew-tap already holds only Casks/.
 homebrew_casks:
-  - name: spireweb
-    homepage: "https://github.com/llimllib/spireweb"
+  - name: brightlantern
+    homepage: "https://github.com/llimllib/brightlantern"
     # Both agents, which the cask has claimed since v0.0.1 without saying so:
     # reading Claude Code's format is most of what M11 was.
     description: "Search and read agent sessions from pi and Claude Code"
@@ -102,7 +102,7 @@ homebrew_casks:
     # Caskroom beside it, which embed.DefaultPaths finds by resolving the
     # symlink -- see internal/embed/paths_test.go.
     binaries:
-      - spireweb
+      - brightlantern
     repository:
       owner: llimllib
       name: homebrew-tap
@@ -137,7 +137,7 @@ homebrew_casks:
         end
       end
     caveats: |
-      spireweb indexes your agent sessions on first run.
+      Bright Lantern indexes your agent sessions on first run.
 
       The first semantic search compiles Metal shaders and takes about
       15 seconds; subsequent runs are instant until macOS evicts its
@@ -151,4 +151,4 @@ release:
     beside the binary, so semantic search works from an unpacked tarball with
     nothing else installed.
 
-    `brew install llimllib/tap/spireweb`
+    `brew install llimllib/tap/brightlantern`

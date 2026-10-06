@@ -6,8 +6,8 @@ import (
 	stdsort "sort"
 	"strings"
 
-	"github.com/llimllib/spireweb/internal/index"
-	"github.com/llimllib/spireweb/internal/search"
+	"github.com/llimllib/brightlantern/internal/index"
+	"github.com/llimllib/brightlantern/internal/search"
 )
 
 // Sentinels FTS5 wraps matched terms in.

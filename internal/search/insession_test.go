@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/llimllib/spireweb/internal/index"
+	"github.com/llimllib/brightlantern/internal/index"
 )
 
 // indexFixture builds a real index over sessions given as message text, one

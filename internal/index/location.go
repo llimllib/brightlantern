@@ -11,8 +11,8 @@ import (
 	"github.com/mattn/go-sqlite3"
 )
 
-// DefaultPath is where the index lives: $XDG_DATA_HOME/spireweb/index.db,
-// else ~/.local/share/spireweb/index.db, beside the model.
+// DefaultPath is where the index lives: $XDG_DATA_HOME/brightlantern/index.db,
+// else ~/.local/share/brightlantern/index.db, beside the model.
 //
 // Not a cache directory, which is where it used to be. ~/Library/Caches is
 // somewhere macOS may empty under disk pressure, and cleanup tools empty on
@@ -21,12 +21,12 @@ import (
 // because the model and the settings file already follow it.
 func DefaultPath() string {
 	if d := os.Getenv("XDG_DATA_HOME"); d != "" {
-		return filepath.Join(d, "spireweb", "index.db")
+		return filepath.Join(d, "brightlantern", "index.db")
 	}
 	if home, err := os.UserHomeDir(); err == nil {
-		return filepath.Join(home, ".local", "share", "spireweb", "index.db")
+		return filepath.Join(home, ".local", "share", "brightlantern", "index.db")
 	}
-	return "spireweb-index.db"
+	return "brightlantern-index.db"
 }
 
 // LegacyPath is where versions up to v0.0.2 kept the index, or "" if there is
@@ -60,7 +60,7 @@ type Relocation struct {
 // Moved only when nothing has it open. Renaming a database under an open
 // connection splits it: that process keeps writing to the moved file through
 // its descriptors, while anything opening the old path gets a new, empty one.
-// So an index in use -- by a spireweb serve still running from before the
+// So an index in use -- by a brightlantern serve still running from before the
 // upgrade -- is used where it is, and moved on a later run.
 //
 // Nothing here is an error. Any failure -- a rename across volumes, say --
@@ -76,7 +76,7 @@ func Relocate(dst, legacy string) Relocation {
 		r.Path, r.Stayed = legacy, fmt.Sprintf("it could not be checked: %v", err)
 		return r
 	} else if busy {
-		r.Path, r.Stayed = legacy, "it is open in another spireweb"
+		r.Path, r.Stayed = legacy, "it is open in another brightlantern"
 		return r
 	}
 	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {

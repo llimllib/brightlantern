@@ -9,7 +9,7 @@ import (
 
 	"github.com/mattn/go-sqlite3"
 
-	"github.com/llimllib/spireweb/internal/embed"
+	"github.com/llimllib/brightlantern/internal/embed"
 )
 
 func TestReaderRefusesWrites(t *testing.T) {

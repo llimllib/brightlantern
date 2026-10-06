@@ -10,7 +10,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/llimllib/spireweb/internal/session"
+	"github.com/llimllib/brightlantern/internal/session"
 )
 
 // Hostname identifies the machine that indexed a session, so that indexes from

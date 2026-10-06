@@ -10,10 +10,10 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/llimllib/spireweb/internal/index"
-	"github.com/llimllib/spireweb/internal/render"
-	"github.com/llimllib/spireweb/internal/search"
-	"github.com/llimllib/spireweb/internal/session"
+	"github.com/llimllib/brightlantern/internal/index"
+	"github.com/llimllib/brightlantern/internal/render"
+	"github.com/llimllib/brightlantern/internal/search"
+	"github.com/llimllib/brightlantern/internal/session"
 )
 
 // listLimit is how many rows the list pane renders.

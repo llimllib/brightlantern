@@ -14,7 +14,7 @@ func TestSaveAndLoadRoundTrip(t *testing.T) {
 		Dirs:   []string{"/Users/me/.claude/projects", "/Users/me/.pi/agent/sessions"},
 		Titles: TitlesClaude,
 		Addr:   "127.0.0.1:8765",
-		Index:  "/Users/me/.local/share/spireweb/index.db",
+		Index:  "/Users/me/.local/share/brightlantern/index.db",
 	}
 	if err := want.SaveTo(path); err != nil {
 		t.Fatal(err)
@@ -35,7 +35,7 @@ func TestSaveAndLoadRoundTrip(t *testing.T) {
 	}
 }
 
-// The file exists to be opened and read by someone wondering what spireweb
+// The file exists to be opened and read by someone wondering what brightlantern
 // decided. A list of paths answers "what" without ever answering "why".
 func TestSaveExplainsItself(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "config.toml")
@@ -46,7 +46,7 @@ func TestSaveExplainsItself(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"# spireweb settings", "dirs", "titles"} {
+	for _, want := range []string{"# brightlantern settings", "dirs", "titles"} {
 		if !strings.Contains(string(b), want) {
 			t.Errorf("the written file does not mention %q:\n%s", want, b)
 		}
@@ -88,19 +88,19 @@ func TestLoadReportsAMalformedFile(t *testing.T) {
 	}
 }
 
-// XDG rather than ~/Library/Application Support, matching SPIREWEB_DATA_DIR
+// XDG rather than ~/Library/Application Support, matching BRIGHTLANTERN_DATA_DIR
 // and embed.DefaultPaths. Two halves of one install on two schemes would be
 // gratuitous.
 func TestPathFollowsXDG(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", "/tmp/xdg")
-	if got, want := Path(), filepath.Join("/tmp/xdg", "spireweb", "config.toml"); got != want {
+	if got, want := Path(), filepath.Join("/tmp/xdg", "brightlantern", "config.toml"); got != want {
 		t.Errorf("Path() = %q, want %q", got, want)
 	}
 
 	t.Setenv("XDG_CONFIG_HOME", "")
 	home := t.TempDir()
 	t.Setenv("HOME", home)
-	if got, want := Path(), filepath.Join(home, ".config", "spireweb", "config.toml"); got != want {
+	if got, want := Path(), filepath.Join(home, ".config", "brightlantern", "config.toml"); got != want {
 		t.Errorf("Path() = %q, want %q", got, want)
 	}
 }

@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/llimllib/spireweb/internal/embed"
+	"github.com/llimllib/brightlantern/internal/embed"
 )
 
 // An Embedder has to work against the reader pool, because that is where

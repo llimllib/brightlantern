@@ -115,7 +115,7 @@ func TestStaleIndexWithAnArchiveIsKept(t *testing.T) {
 	}
 }
 
-// An index from a newer spireweb is refused and left exactly as it was: this
+// An index from a newer brightlantern is refused and left exactly as it was: this
 // build cannot know what it would be throwing away.
 func TestNewerIndexIsRefusedAndUntouched(t *testing.T) {
 	path := copyFixture(t, "v0.0.1.db")

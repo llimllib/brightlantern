@@ -14,8 +14,8 @@ import (
 
 	"github.com/PuerkitoBio/goquery"
 
-	"github.com/llimllib/spireweb/internal/index"
-	"github.com/llimllib/spireweb/internal/search"
+	"github.com/llimllib/brightlantern/internal/index"
+	"github.com/llimllib/brightlantern/internal/search"
 )
 
 // Assertions run against the parsed document rather than golden files. The
@@ -326,7 +326,7 @@ func TestEmptyIndexExplainsItself(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d", rec.Code)
 	}
-	if !strings.Contains(doc.Text(), "spireweb index") {
+	if !strings.Contains(doc.Text(), "brightlantern index") {
 		t.Error("empty state does not say how to fix it")
 	}
 }

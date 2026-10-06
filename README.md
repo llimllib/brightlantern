@@ -1,8 +1,11 @@
-# spireweb
+# Bright Lantern 🔆🏮
 
-A web interface for searching and reading agent sessions, from
+Search and read your coding agent sessions, from
 [pi](https://github.com/badlogic/pi-mono) and from
-[Claude Code](https://claude.com/claude-code).
+[Claude Code](https://claude.com/claude-code). Named for *Ctenoscopelus*, the
+bright lanternfish, which carries its own light through deep water.
+
+Formerly spireweb.
 
 Local semantic search via [sqlite-vec](https://github.com/asg017/sqlite-vec) and
 [sqlite-lembed](https://github.com/landrix/sqlite-lembed/), combined with FTS5
@@ -11,20 +14,20 @@ keyword search by reciprocal rank fusion.
 ## Install
 
 ```bash
-brew install llimllib/tap/spireweb
-spireweb
+brew install llimllib/tap/brightlantern
+brightlantern
 ```
 
 That serves on <http://127.0.0.1:8080>, building the index behind the page if
-there is not one yet. `spireweb help` lists the other commands.
+there is not one yet. `brightlantern help` lists the other commands.
 
 macOS on Apple Silicon. The cask carries the embedding model and the search
 extension alongside the binary, so nothing else is downloaded.
 
-`spireweb` finds your sessions itself, looking in `$CLAUDE_CONFIG_DIR/projects`,
+`brightlantern` finds your sessions itself, looking in `$CLAUDE_CONFIG_DIR/projects`,
 `~/.config/claude/projects`, `~/.claude/projects`, and `~/.pi/agent/sessions`,
 and indexes everything it finds. What it found is written to
-`~/.config/spireweb/config.toml` on the first run, so that installing another
+`~/.config/brightlantern/config.toml` on the first run, so that installing another
 agent later does not silently change what is indexed. Edit that file, or pass
 `--dir` (repeatable), to choose differently.
 
@@ -42,15 +45,15 @@ message. Two backends, set with `titles` in the config file or `--titles-via`:
   run over a large corpus asks first. `--titles N` caps it, for trying it out.
 
 `titles = "off"` lists every session under its opening message, which is what
-spireweb did for its first five milestones.
+Bright Lantern did for its first five milestones.
 
 ## The archive
 
 The index keeps every message of every session as its agent wrote it, so a
-session stays readable and searchable after its file is gone. `spireweb info`
+session stays readable and searchable after its file is gone. `brightlantern info`
 says where it is.
 
-`spireweb merge other.db` folds another machine's index into this one. Sessions
+`brightlantern merge other.db` folds another machine's index into this one. Sessions
 are matched by id and the longer copy wins; titles come with them, so they are
 not paid for twice. A session whose two copies disagree is reported and left
 alone.
@@ -88,6 +91,6 @@ See [AGENTS.md](AGENTS.md) for the things that cost somebody an hour.
 
 ## Status
 
-Under construction; see the [milestones](https://github.com/llimllib/spireweb/milestones).
+Under construction; see the [milestones](https://github.com/llimllib/brightlantern/milestones).
 Browsing, search, live indexing, titles, both session formats, and the archive
 work.

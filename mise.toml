@@ -23,7 +23,7 @@ goreleaser = "2"
 GOFLAGS = "-tags=sqlite_fts5"
 
 # Where the embedding model and the sqlite-lembed extension are installed.
-SPIREWEB_DATA_DIR = "{{env.HOME}}/.local/share/spireweb"
+BRIGHTLANTERN_DATA_DIR = "{{env.HOME}}/.local/share/brightlantern"
 
 # Compile sqlite-vec against the header for the SQLite that actually gets
 # linked, rather than whatever the machine has in /usr/include. See
@@ -43,11 +43,11 @@ sources = ["internal/web/ts/*.ts", "tsconfig.json"]
 outputs = ["internal/web/static/app.js"]
 
 [tasks.build]
-description = "Build the spireweb binary"
+description = "Build the brightlantern binary"
 depends = ["ts", "sqlite-header"]
 # git describe fails in a repository with no tags, and an empty -X value sets
 # Version to the empty string rather than leaving the source default.
-run = 'go build -ldflags "-X main.Version=$(git describe --tags --dirty 2>/dev/null || echo dev)" -o spireweb ./cmd/spireweb'
+run = 'go build -ldflags "-X main.Version=$(git describe --tags --dirty 2>/dev/null || echo dev)" -o brightlantern ./cmd/brightlantern'
 
 [tasks.test]
 description = "Run the Go test suite"
@@ -85,11 +85,11 @@ depends = ["gofmt-check", "lint", "test"]
 [tasks.index]
 description = "Build the search index"
 depends = ["build"]
-run = "./spireweb index"
+run = "./brightlantern index"
 
 [tasks."dev:go"]
 description = "Run the server, rebuilding on change"
-run = "wgo run ./cmd/spireweb serve --dev --titles-via=claude"
+run = "wgo run ./cmd/brightlantern serve --dev --titles-via=claude"
 
 [tasks."dev:ts"]
 description = "Compile TypeScript on change"
@@ -127,7 +127,7 @@ description = "Stage the extension and model for the release archive"
 depends = ["setup"]
 run = [
   "mkdir -p build",
-  'cp "$SPIREWEB_DATA_DIR/lembed0.dylib" "$SPIREWEB_DATA_DIR/all-MiniLM-L6-v2.Q8_0.gguf" build/',
+  'cp "$BRIGHTLANTERN_DATA_DIR/lembed0.dylib" "$BRIGHTLANTERN_DATA_DIR/all-MiniLM-L6-v2.Q8_0.gguf" build/',
 ]
 
 [tasks.release]
@@ -144,4 +144,4 @@ description = "Build the release artifacts locally, without tagging or publishin
 run = "goreleaser release --snapshot --clean"
 
 [tasks.clean]
-run = "rm -f spireweb internal/web/static/app.js internal/web/static/app.js.map && rm -rf test-results playwright-report dist build"
+run = "rm -f brightlantern internal/web/static/app.js internal/web/static/app.js.map && rm -rf test-results playwright-report dist build"

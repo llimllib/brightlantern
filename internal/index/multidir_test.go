@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/llimllib/spireweb/internal/session"
+	"github.com/llimllib/brightlantern/internal/session"
 )
 
 // installSession writes a one-message pi session into dir/<id>.jsonl.
@@ -60,7 +60,7 @@ func TestBuildIndexesSeveralDirectoriesAsOneCorpus(t *testing.T) {
 
 // Sessions from a directory that is no longer listed are kept. Unlisting a
 // directory says "stop watching this", not "forget what it held", and taking
-// it literally would make one `spireweb index --dir somewhere-else` against the
+// it literally would make one `brightlantern index --dir somewhere-else` against the
 // real index delete the archive of everything else.
 func TestBuildKeepsSessionsFromARemovedDirectory(t *testing.T) {
 	piDir := writeCorpus(t, map[string][]string{"pi-1": {userMsg("a pi session")}})

@@ -51,7 +51,7 @@ jobs:
       - name: Cache the extension and model
         uses: actions/cache@v6
         with:
-          path: ~/.local/share/spireweb
+          path: ~/.local/share/brightlantern
           key: lembed-${{ runner.os }}-${{ hashFiles('mise-tasks/setup') }}
 
       # For `mise run ts`, which .goreleaser.yaml runs as a before hook:

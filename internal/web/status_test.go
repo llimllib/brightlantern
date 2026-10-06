@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/llimllib/spireweb/internal/indexer"
+	"github.com/llimllib/brightlantern/internal/indexer"
 )
 
 // stubStatus stands in for the indexer.

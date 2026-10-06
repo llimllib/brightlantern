@@ -8,7 +8,7 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/llimllib/spireweb/internal/session"
+	"github.com/llimllib/brightlantern/internal/session"
 )
 
 // MetaMigrations counts the entries of migrations applied to this index.
@@ -53,7 +53,7 @@ var migrations = []migration{}
 //
 // Downgrading is still unsupported; it is merely no longer destructive.
 
-// NewerIndexError reports an index migrated by a newer spireweb than this one.
+// NewerIndexError reports an index migrated by a newer brightlantern than this one.
 //
 // Never reset: everything in it may be newer than this binary understands,
 // including archive rows this binary would not write back.
@@ -64,8 +64,8 @@ type NewerIndexError struct {
 }
 
 func (e *NewerIndexError) Error() string {
-	return fmt.Sprintf("index at %s was written by a newer spireweb (%d migrations; this "+
-		"build knows %d). Upgrade spireweb, or point --db somewhere else", e.Path, e.Applied, e.Known)
+	return fmt.Sprintf("index at %s was written by a newer brightlantern (%d migrations; this "+
+		"build knows %d). Upgrade brightlantern, or point --db somewhere else", e.Path, e.Applied, e.Known)
 }
 
 // StaleIndexError reports an index whose schema_version is not SchemaVersion.

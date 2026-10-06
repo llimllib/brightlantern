@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/llimllib/spireweb/internal/session"
+	"github.com/llimllib/brightlantern/internal/session"
 )
 
 // writeClaudeFixture writes a Claude Code session, whose records differ from

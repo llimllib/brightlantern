@@ -1,7 +1,7 @@
 // Package titles generates one-line session titles with an LLM.
 //
 // The pass is deliberately separate from indexing. It is the only part of
-// spireweb that talks to a network service, it costs money, and it is slow
+// brightlantern that talks to a network service, it costs money, and it is slow
 // compared to everything else; search must work while it runs, and must keep
 // working when it cannot run at all. A session with no title falls back to its
 // opening message, so the interface never waits on this and never shows a
@@ -14,7 +14,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"github.com/llimllib/spireweb/internal/session"
+	"github.com/llimllib/brightlantern/internal/session"
 )
 
 // MaxSliceChars bounds the prose handed to the model.

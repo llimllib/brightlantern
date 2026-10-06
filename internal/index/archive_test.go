@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/llimllib/spireweb/internal/session"
+	"github.com/llimllib/brightlantern/internal/session"
 )
 
 func archivedCount(t *testing.T, db *DB, sessionID string) int {

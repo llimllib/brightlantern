@@ -6,7 +6,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/llimllib/spireweb/internal/embed"
+	"github.com/llimllib/brightlantern/internal/embed"
 )
 
 // Live indexing embeds new chunks on the writer while search requests embed

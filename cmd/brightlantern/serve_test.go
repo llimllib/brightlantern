@@ -6,7 +6,7 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/llimllib/spireweb/internal/index"
+	"github.com/llimllib/brightlantern/internal/index"
 )
 
 // serve used to refuse to start without an index, so the check that matters is
@@ -70,8 +70,8 @@ func TestBootstrapIndexLeavesAnExistingIndexAlone(t *testing.T) {
 	}
 }
 
-// A bare `spireweb` serves, and a leading flag does not become a subcommand --
-// otherwise `spireweb --addr :9000` would complain instead of doing the obvious
+// A bare `brightlantern` serves, and a leading flag does not become a subcommand --
+// otherwise `brightlantern --addr :9000` would complain instead of doing the obvious
 // thing.
 func TestCommandDefaultsToServe(t *testing.T) {
 	tests := []struct {

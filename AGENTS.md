@@ -2,6 +2,26 @@
 
 Non-obvious things about this repository. Everything here cost somebody an hour.
 
+## Name
+
+**Bright Lantern**, command `brightlantern`, formerly **spireweb** (#81, #83).
+The emoji are 🔆🏮; it is named for *Ctenoscopelus*, the bright lanternfish.
+Bundle identifier, when M14 needs one: `org.billmill.brightlantern`, from
+brightlantern.billmill.org. It needs to be a domain owned, not one that
+resolves, and must never change: Gatekeeper, SMAppService and privacy
+permissions all attach to it.
+
+"spireweb" survives on purpose in three places, and nowhere else:
+
+- `index.LegacyPath`, `~/Library/Caches/spireweb/index.db`, which is where
+  v0.0.2 and earlier kept the index and is what gets moved from.
+- `internal/index/testdata/README.md`, which says how v0.0.1 -- whose binary
+  was `./cmd/spireweb` -- built the fixture.
+- Measurements of the corpus taken before the rename, below.
+
+Settings and the model in `~/.config/spireweb` and `~/.local/share/spireweb`
+are not migrated: there was one install, and it was moved by hand.
+
 ## Build
 
 ```bash
@@ -25,7 +45,7 @@ CI is Linux and has no GPU, so the semantic tests skip -- see below.
 
 `setup` deletes its build tree when it finishes: building the fork leaves
 473MB behind to produce a 3.2MB dylib, and a rebuild from nothing is a minute.
-`SPIREWEB_KEEP_SRC=1` keeps it for working on the extension itself.
+`BRIGHTLANTERN_KEEP_SRC=1` keeps it for working on the extension itself.
 
 ## sqlite3.h
 
@@ -140,7 +160,7 @@ what a person types. On the corpus that was 1600 of 1617 files and 283 of
 
 | entrypoint | files | what it is |
 | --- | --- | --- |
-| `sdk-cli` in `spireweb-titles-*` | 1215 | spireweb's own title prompts |
+| `sdk-cli` in `spireweb-titles-*` | 1215 | this tool's own title prompts |
 | any `sdk-ts` | 252 | pi tunnelling through claude-bridge |
 | `cli` | **17** | someone typing |
 
@@ -177,22 +197,22 @@ overlap -- `CLAUDE_CONFIG_DIR` is usually `~/.config/claude`.
 `index.Build` still falls back to pi's directory alone. Only `cmd` detects,
 because a test indexing a fixture must not depend on the machine running it.
 
-Precedence is flag, then `~/.config/spireweb/config.toml`, then detection, and
+Precedence is flag, then `~/.config/brightlantern/config.toml`, then detection, and
 **"was the flag given"** is the question rather than "does it differ from its
 default" -- otherwise `--addr` with the default value could not override a file.
 `resolve` is handed the set of flags the FlagSet saw.
 
 A first run writes down what it detected, because detection's answer moves:
 install pi to try it once and the corpus doubles. It records `titles = "api"`,
-which is what spireweb already did -- writing `off` would quietly stop titling
+which is what brightlantern already did -- writing `off` would quietly stop titling
 for someone who has a key and has been getting them.
 
-XDG, not `~/Library/Application Support`, matching `SPIREWEB_DATA_DIR` and
+XDG, not `~/Library/Application Support`, matching `BRIGHTLANTERN_DATA_DIR` and
 `embed.DefaultPaths`.
 
 ## Where the index lives
 
-`$XDG_DATA_HOME/spireweb/index.db`, else `~/.local/share/spireweb/index.db`,
+`$XDG_DATA_HOME/brightlantern/index.db`, else `~/.local/share/brightlantern/index.db`,
 beside the model. **Not a cache directory**, which is where v0.0.2 and earlier
 kept it: macOS may empty `~/Library/Caches` under disk pressure, and cleanup
 tools empty it on sight. That was harmless while the index was derived; the
@@ -240,7 +260,7 @@ without that, a test resolving the default would move the real index.
 
 `messages` holds every message of every session as its agent wrote it, and is
 the one table that is not derived from something else: chunks, vectors, and titles can
-all be rebuilt from it, and it cannot be rebuilt from them. `spireweb doctor`
+all be rebuilt from it, and it cannot be rebuilt from them. `brightlantern doctor`
 checks it separately for that reason.
 
 `content` is JSON **text, verbatim and uncompressed**, and both halves are
@@ -285,7 +305,7 @@ watcher alike, and so is one from a directory no longer listed. Only
 exclusions -- SDK files, empty sessions -- are deleted. Before this the sweep
 deleted anything it did not see, and `messages` cascaded with it, which made
 the archive exactly as durable as the session directory and deleted every
-merged session on the next build. It also meant one `spireweb index --dir
+merged session on the next build. It also meant one `brightlantern index --dir
 somewhere-else` against the real index would wipe the rest of it.
 
 **A file that is a prefix of its archive does not truncate it.**
@@ -318,7 +338,7 @@ archiving it back into itself and to keep its `host`.
 
 ### Merge
 
-`spireweb merge OTHER.db`: union by session id, longer copy wins. The other
+`brightlantern merge OTHER.db`: union by session id, longer copy wins. The other
 index is `ATTACH`ed with `mode=ro` through a `file:` URI, which works against
 a WAL database with no `-shm` and refuses writes. Only `sessions` and
 `messages` cross over; chunks and vectors are rebuilt here from the archive,
@@ -602,7 +622,7 @@ silently and ships the previous release's keyboard handling.
 The archive carries `lembed0.dylib` and the model beside the binary, and
 `embed.DefaultPaths` resolves the running executable and looks in its own
 directory. That is what makes both an unpacked tarball and the cask work:
-Homebrew puts only `spireweb` on PATH and leaves the rest in the Caskroom, so
+Homebrew puts only `brightlantern` on PATH and leaves the rest in the Caskroom, so
 resolving *through* the symlink is what finds them.
 
 **Homebrew quarantines cask artifacts by default** -- that is what
@@ -611,7 +631,7 @@ Both files are refused, and differently: the binary dies with `Killed: 9` behind
 an "Apple could not verify" dialog, while the dylib fails `dlopen` and SQLite
 retries with the suffix appended, so the error names `lembed0.dylib.dylib` and
 says "no such file" about a file that is right there. The result is a working
-spireweb with semantic search silently gone. The `postflight_steps` + `xattr -dr`
+brightlantern with semantic search silently gone. The `postflight_steps` + `xattr -dr`
 in `.goreleaser.yaml` clears both; notarization would be the real fix.
 
 Pushing the cask needs `HOMEBREW_TAP_TOKEN`, a PAT secret on this repo.
