@@ -399,9 +399,8 @@ func (d *DB) SetMeta(key, value string) error {
 
 // EnsureVectorTable creates the sqlite-vec table for embeddings.
 //
-// Separate from the base schema because vec0 is only available when the
-// semantic driver is in use. A lexical-only build must not fail to open an
-// index just because it cannot create this table.
+// Separate from the base schema because the dimension comes from the model,
+// which is only known once one has loaded.
 func (d *DB) EnsureVectorTable(dim int) error {
 	_, err := d.sql.Exec(fmt.Sprintf(
 		`CREATE VIRTUAL TABLE IF NOT EXISTS chunks_vec USING vec0(embedding float[%d])`, dim))
@@ -421,7 +420,7 @@ func (d *DB) HasVectors() (bool, error) {
 		return false, err
 	}
 	if err := d.sql.QueryRow(`SELECT COUNT(*) FROM chunks_vec`).Scan(&n); err != nil {
-		return false, nil // table exists but is unreadable without the extension
+		return false, err
 	}
 	return n > 0, nil
 }
@@ -434,8 +433,8 @@ type Stats struct {
 	Vectors  int
 }
 
-// Stats reads current counts. Vectors is -1 when the vector table is not
-// readable, which distinguishes "no semantic index" from "zero chunks".
+// Stats reads current counts. Vectors is -1 when there is no vector table,
+// which distinguishes "no semantic index" from "zero chunks".
 func (d *DB) Stats() (Stats, error) {
 	var s Stats
 	err := d.sql.QueryRow(`

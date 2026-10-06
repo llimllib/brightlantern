@@ -27,9 +27,10 @@ func runServe(dbPath, addr string, dirs []string, dev, launchBrowser, noWatch bo
 		return err
 	}
 
-	// The server only reads. Semantic support is preferred because chunks_vec
-	// is unreadable without the extension, but browsing works without it, so
-	// a machine that cannot load the model still gets a usable interface.
+	// The server only reads. Semantic support is preferred because queries
+	// need the model to embed, but browsing and keyword search work without
+	// it, so a machine that cannot load the model still gets a usable
+	// interface.
 	driver := index.DriverName
 	if err := index.RegisterSemanticDriver(embed.DefaultPaths()); err == nil {
 		driver = index.SemanticDriverName

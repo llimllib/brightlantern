@@ -8,8 +8,9 @@ package index
 //   - -tags sqlite_fts5: mattn/go-sqlite3 omits FTS5 by default, and without it
 //     the schema fails at runtime with "no such module: fts5". mise sets this in
 //     GOFLAGS.
-//   - sqlite-vec is linked in via the Go bindings; sqlite-lembed is loaded at
-//     runtime from a dylib, because it is distributed as a native library.
+//   - sqlite-vec is linked in via the Go bindings and registered for every
+//     connection on both drivers; sqlite-lembed is loaded at runtime from a
+//     dylib, because it is distributed as a native library.
 
 import (
 	"database/sql"
@@ -33,8 +34,24 @@ var (
 	regErr  error
 )
 
-// RegisterSemanticDriver registers a driver that loads sqlite-lembed, with
-// sqlite-vec linked in, and registers the embedding model on every connection
+// sqlite-vec registers itself as an auto-extension, so it is present on every
+// connection opened afterwards, by either driver. macOS deprecates
+// process-global auto extensions, but the mechanism still works and is what the
+// bindings provide.
+//
+// Both drivers, because vec0 is compiled into this binary and needs no GPU --
+// only lembed needs the model. The lexical driver is what serve and index fall
+// back to when the model will not load, and it writes to indexes that already
+// have chunks_vec: deleting a chunk deletes its vector, and without vec0 that
+// failed with "no such module: vec0", aborting the run and wedging it on the
+// same file every time after (#82). Skipping the vector delete instead would
+// orphan vectors on purpose.
+func init() {
+	sqlite_vec.Auto()
+}
+
+// RegisterSemanticDriver registers a driver that loads sqlite-lembed and
+// registers the embedding model on every connection
 // it opens.
 //
 // Per-connection model registration is the important part, and it is easy to
@@ -55,11 +72,6 @@ func RegisterSemanticDriver(p embed.Paths) error {
 			regErr = err
 			return
 		}
-
-		// sqlite-vec registers itself as an auto-extension on every new
-		// connection. macOS deprecates process-global auto extensions, but the
-		// mechanism still works and is what the bindings provide.
-		sqlite_vec.Auto()
 
 		sql.Register(SemanticDriverName, &sqlite3.SQLiteDriver{
 			Extensions:  []string{p.Extension},

@@ -659,11 +659,7 @@ func (d *DB) needsVectors() (bool, error) {
 	err = d.sql.QueryRow(`SELECT EXISTS(
 		SELECT 1 FROM chunks c
 		WHERE NOT EXISTS (SELECT 1 FROM chunks_vec v WHERE v.rowid = c.id))`).Scan(&missing)
-	if err != nil {
-		// The table exists but is unreadable without the extension loaded.
-		return false, nil
-	}
-	return missing, nil
+	return missing, err
 }
 
 // checkEmbedder refuses to add vectors from one model to an index built with

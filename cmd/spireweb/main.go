@@ -453,17 +453,9 @@ func runTitles(ctx context.Context, db *index.DB, limit int, via string) error {
 }
 
 func runStats(dbPath string) error {
-	// Prefer the semantic driver: chunks_vec is a vec0 virtual table, and
-	// without the extension loaded it is not readable, so a plain reader would
-	// report an index full of embeddings as having none.
-	driver := index.DriverName
-	if err := index.RegisterSemanticDriver(embed.DefaultPaths()); err == nil {
-		driver = index.SemanticDriverName
-	}
-	db, err := index.OpenReader(dbPath, driver)
-	if err != nil && driver != index.DriverName {
-		db, err = index.OpenReader(dbPath, index.DriverName)
-	}
+	// The lexical driver: counting needs vec0, which every connection has, and
+	// not the model, which takes seconds to load and needs a GPU.
+	db, err := index.OpenReader(dbPath, index.DriverName)
 	if err != nil {
 		return err
 	}
@@ -498,33 +490,13 @@ func runStats(dbPath string) error {
 // without also deleting its index rows leaves search returning hits that point
 // at rows which no longer exist. Nothing detects that at query time, so it has
 // to be checked directly -- and it cannot be checked with the sqlite3 CLI,
-// because chunks_vec is unreadable without the extension this binary links in.
+// because chunks_vec is unreadable without the vec0 module this binary links in.
 func runDoctor(dbPath string) error {
-	// The extension is needed to read chunks_vec at all, but an index built
-	// without embeddings has no such table and is still worth checking.
-	driver := index.DriverName
-	semantic := false
-	if err := index.RegisterSemanticDriver(embed.DefaultPaths()); err == nil {
-		driver, semantic = index.SemanticDriverName, true
-	} else {
-		note("extension unavailable, skipping vector checks: %v", err)
-	}
-
-	db, err := index.OpenReader(dbPath, driver)
-	if err != nil && semantic {
-		// Registering the driver only proves the files are on disk. Opening a
-		// connection is where llama.cpp actually loads the model, and it fails
-		// on a machine with no reachable GPU -- a sandbox, a headless runner,
-		// someone's laptop with a broken install.
-		//
-		// Falling back rather than returning, which is what this did and what
-		// made doctor the one command that refused to run. It is the command
-		// someone reaches for *because* something is wrong, so it has to check
-		// what it can and say what it could not.
-		note("semantic search unavailable, skipping vector checks: %v", err)
-		semantic = false
-		db, err = index.OpenReader(dbPath, index.DriverName)
-	}
+	// The lexical driver. Every connection has vec0, so the vector checks run;
+	// none of them needs the model. Loading it was what made doctor skip them
+	// on a machine with no reachable GPU -- the command someone reaches for
+	// *because* something is wrong, on exactly the machines where it might be.
+	db, err := index.OpenReader(dbPath, index.DriverName)
 	if err != nil {
 		return err
 	}
@@ -539,11 +511,7 @@ func runDoctor(dbPath string) error {
 			`SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=?`, table).Scan(&n)
 		return n > 0
 	}
-	// chunks_vec is a vec0 virtual table: it appears in sqlite_master whether or
-	// not the extension is loaded, but querying it without one errors. So the
-	// checks need both that the table exists and that this connection can read
-	// it.
-	hasVec, hasMessages := semantic && has("chunks_vec"), has("messages")
+	hasVec, hasMessages := has("chunks_vec"), has("messages")
 	if !hasMessages {
 		note("no message archive in this index; run 'spireweb index' to build one")
 	}

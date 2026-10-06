@@ -85,6 +85,13 @@ single-file property.
   reader pool is open, almost all of it the five loaded models. Raising
   `ReaderConns` costs 30MB a connection, which is the reason it is 4 and not
   something larger.
+- **vec0 is on every connection, lexical ones included.** It is compiled in
+  and needs no GPU; only lembed needs the model. The lexical driver is the
+  fallback when the model will not load, and it writes to indexes that have
+  `chunks_vec`: deleting a chunk deletes its vector, and without vec0 that
+  aborted the run with "no such module: vec0" and wedged it on the same file
+  every run after (#82). It also lets `stats` and `doctor` count vectors
+  without loading the model.
 - **Readers: a pool**, `_query_only=true` — *not* `mode=ro`, which cannot
   create the `-shm`/`-wal` files WAL needs.
 - **The model is registered per connection**, via the driver's `ConnectHook`.
@@ -300,11 +307,6 @@ because chunk ids are `AUTOINCREMENT` and `chunks_vec` is keyed by them.
 - A path claimed by a different session id here is reported and skipped:
   `sessions.path` is unique and neither row can go without its archive.
 - No titles pass afterwards. Carrying titles is about not paying twice.
-- `--lexical` against an index that has `chunks_vec` fails with "no such
-  module: vec0" as soon as a chunk has to be deleted, because
-  `deleteChunksExceptTx` deletes vectors too. That predates merge and is true
-  of `index` as well, but a sandbox with no Metal device lands in exactly that
-  state, so it is where you will meet it.
 
 `tool_calls` is a view, dropped and recreated on every open because a view
 holds no data. It unions pi's `toolCall` blocks with Claude Code's `tool_use`
