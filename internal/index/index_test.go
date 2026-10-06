@@ -453,10 +453,9 @@ func contains(hay []int64, needle int64) bool {
 	return false
 }
 
-// A stale index must be rebuilt automatically rather than reported as a fatal
-// error. The index is derived from the session files, so discarding it is always
-// safe, and telling the user to run a command is a worse experience than just
-// doing the work.
+// A stale index with nothing in it but derived data is rebuilt automatically
+// rather than reported as a fatal error: discarding it loses only the time to
+// rebuild. One holding an archive is moved aside instead; see migrations_test.
 func TestOpenOrResetRebuildsStaleIndex(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "i.db")
 
@@ -485,8 +484,11 @@ func TestOpenOrResetRebuildsStaleIndex(t *testing.T) {
 		t.Fatalf("OpenOrReset failed: %v", err)
 	}
 	defer db2.Close()
-	if !reset {
-		t.Error("reset flag was false for a stale index")
+	if reset == nil {
+		t.Fatal("no reset reported for a stale index")
+	}
+	if reset.Kept != "" {
+		t.Errorf("an index with no archive was kept at %s rather than deleted", reset.Kept)
 	}
 	if v, _ := db2.Meta(MetaSchemaVersion); v != strconv.Itoa(SchemaVersion) {
 		t.Errorf("schema_version = %q after reset, want %d", v, SchemaVersion)
@@ -519,7 +521,7 @@ func TestOpenOrResetKeepsGoodIndex(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer db2.Close()
-	if reset {
+	if reset != nil {
 		t.Error("a current index was needlessly reset")
 	}
 	st, _ := db2.Stats()

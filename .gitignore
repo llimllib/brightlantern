@@ -7,6 +7,8 @@
 /internal/web/static/app.js.map
 
 *.db
+# a database a released binary wrote; see its README
+!internal/index/testdata/*.db
 *.db-wal
 *.db-shm
 

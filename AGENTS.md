@@ -324,6 +324,47 @@ SELECT COUNT(*) FROM chunks c
   WHERE NOT EXISTS (SELECT 1 FROM chunks_vec v WHERE v.rowid = c.id);
 ```
 
+### Migrations
+
+The layout changes through `migrations` in `internal/index/migrations.go`: a
+numbered, forward-only list, each entry applied once in its own transaction and
+counted under `meta.migrations`. **Never bump `SchemaVersion`**, which used to
+be the mechanism and meant "delete the database and rebuild it" -- right while
+everything was derived, and wrong since the archive. A change SQLite's `ALTER
+TABLE` cannot express is still a migration: new table, copy, drop, rename.
+
+`SchemaVersion` is frozen at 1 for a reason that is not in this repository:
+**v0.0.1 and v0.0.2 delete any index whose `schema_version` is not 1**, and
+released binaries cannot be fixed. Counting migrations under a key they never
+read means reinstalling an old version against a migrated index gets SQL
+errors, or derived data left stale for `--full` -- both recoverable. Downgrade
+is unsupported, just no longer destructive.
+
+Order inside `init` is load-bearing:
+
+- **Every refusal comes before any write.** A newer index (more migrations than
+  this build knows) is refused and left byte-identical; the test compares the
+  file. `views` used to be dropped and recreated before the version was even
+  read.
+- `addColumns` runs before migrations: it predates them and is idempotent.
+- `schema` runs **after** migrations, so a `CREATE INDEX` there can name a
+  column a migration adds.
+
+`OpenOrReset` survives only for a `schema_version` other than 1, which nothing
+released has written. Even then an index holding messages or titles is **moved
+aside**, never deleted: `index.db.schema-N.<timestamp>`.
+
+`merge` requires the other index to have the same migration count, because it
+reads the other through a read-only `ATTACH` and names columns. Behind is
+refused because no migration exists yet to be behind by; migrating a temporary
+copy before attaching it is the shape that fits when one does.
+
+`internal/index/testdata/v0.0.1.db` is a database the released v0.0.1 wrote,
+and must open intact with no reset. It is the one test of a migration this code
+did not also generate. Never regenerate it with a newer build; its README says
+how it was made, and a successor fixture should be added per release that
+changes the layout.
+
 ## Live indexing
 
 `serve` opens a second, writing handle and runs a catch-up build followed by
@@ -405,9 +446,8 @@ A failure writes **neither**, so the row keeps its fallback and the next run
 retries it. `MarkTitleChecked` writes only `title_msgs`, which is how a session
 with no prose at all settles without ever getting a title.
 
-Both columns are added by `migrate()` (`ALTER TABLE ADD COLUMN`), not by
-`schema`. Bumping `SchemaVersion` would have discarded the database and
-re-embedded 46k chunks to gain two nullable columns.
+Both columns are added by `addColumns()` (`ALTER TABLE ADD COLUMN`), not by
+`schema`, because they predate migrations -- see "Migrations".
 
 `--titles N` caps a run. The corpus is on the order of a dollar all at once, so
 a trial run over the newest few is worth having.

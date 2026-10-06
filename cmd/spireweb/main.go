@@ -142,6 +142,22 @@ func main() {
 	}
 }
 
+// openOrReset is index.OpenOrReset, saying what happened to an index it
+// replaced. Every path through openIndex, so a lexical reset is not silent.
+func openOrReset(path, driver string) (*index.DB, error) {
+	db, reset, err := index.OpenOrReset(path, driver)
+	switch {
+	case reset == nil:
+	case reset.Kept != "":
+		note("index had schema version %s and could not be migrated; it is kept at %s "+
+			"and a new one will be built", reset.Found, reset.Kept)
+	default:
+		note("index had schema version %s and held nothing that cannot be rebuilt; "+
+			"rebuilding", reset.Found)
+	}
+	return db, err
+}
+
 // openIndex opens the index with semantic support when it is available, and
 // falls back to lexical-only when it is not.
 //
@@ -157,14 +173,14 @@ func openIndex(path string, lexical bool) (*index.DB, index.Embedder, error) {
 	}
 
 	if lexical {
-		db, _, err := index.OpenOrReset(path, index.DriverName)
+		db, err := openOrReset(path, index.DriverName)
 		return db, nil, err
 	}
 
 	paths := embed.DefaultPaths()
 	if err := index.RegisterSemanticDriver(paths); err != nil {
 		note("semantic search unavailable: %v", err)
-		db, _, err := index.OpenOrReset(path, index.DriverName)
+		db, err := openOrReset(path, index.DriverName)
 		return db, nil, err
 	}
 
@@ -172,14 +188,15 @@ func openIndex(path string, lexical bool) (*index.DB, index.Embedder, error) {
 	// model would not load. Never continue past it on the semantic driver: a
 	// connection with no registered model does not return errors from lembed(),
 	// it segfaults the process.
-	db, reset, err := index.OpenOrReset(path, index.SemanticDriverName)
+	db, err := openOrReset(path, index.SemanticDriverName)
+	var newer *index.NewerIndexError
+	if errors.As(err, &newer) {
+		return nil, nil, err // about the index, not the model; lexical would refuse it too
+	}
 	if err != nil {
 		note("semantic search unavailable: %v", err)
-		db, _, err := index.OpenOrReset(path, index.DriverName)
+		db, err := openOrReset(path, index.DriverName)
 		return db, nil, err
-	}
-	if reset {
-		note("index was written by a different schema version; rebuilding")
 	}
 
 	stop := noteSlowModelLoad()
@@ -188,7 +205,7 @@ func openIndex(path string, lexical bool) (*index.DB, index.Embedder, error) {
 	if err != nil {
 		db.Close()
 		note("semantic search unavailable: %v", err)
-		db, _, err := index.OpenOrReset(path, index.DriverName)
+		db, err := openOrReset(path, index.DriverName)
 		return db, nil, err
 	}
 	if !e.IsPatchedFork() {

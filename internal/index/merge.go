@@ -182,6 +182,23 @@ func checkMergeable(ctx context.Context, d *DB, otherPath string) error {
 		return fmt.Errorf("%s has schema version %s, this build expects %d",
 			otherPath, version, SchemaVersion)
 	}
+
+	// The other index is read in place, through a read-only ATTACH, so it
+	// cannot be migrated here; and the merge names columns, so it must have the
+	// layout this build has. Behind is refused rather than handled because no
+	// migration exists yet to be behind by. When the first lands, migrating a
+	// temporary copy before attaching it is the shape that fits.
+	var applied int
+	err = d.sql.QueryRowContext(ctx, `SELECT COALESCE(
+		(SELECT CAST(value AS INTEGER) FROM other.meta WHERE key = ?), 0)`,
+		MetaMigrations).Scan(&applied)
+	if err != nil {
+		return err
+	}
+	if applied != len(migrations) {
+		return fmt.Errorf("%s has %d migrations applied and this index has %d; "+
+			"merging needs both at the same layout", otherPath, applied, len(migrations))
+	}
 	return nil
 }
 
@@ -290,9 +307,9 @@ func applyMerge(ctx context.Context, d *DB, plan []mergeStep, rep *MergeReport) 
 		return nil
 	}
 
-	// title_key and title_msgs are added by migrate(), so an index last
+	// title_key and title_msgs are added by addColumns(), so an index last
 	// opened by an older build may not have them. Those rows merge with the
-	// columns empty, which is what migrate() would have given them.
+	// columns empty, which is what addColumns() would have given them.
 	col := func(name string) (string, error) {
 		var n int
 		err := d.sql.QueryRowContext(ctx,

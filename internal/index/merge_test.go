@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -267,8 +268,15 @@ func TestMergeRefusesWhatItCannotRead(t *testing.T) {
 		t.Errorf("other schema version: err = %v", err)
 	}
 
-	// And a refused merge detaches, so the next one can attach again.
 	b.exec(t, `UPDATE meta SET value = ? WHERE key = ?`, "1", MetaSchemaVersion)
+	b.exec(t, `UPDATE meta SET value = ? WHERE key = ?`, strconv.Itoa(len(migrations)+1), MetaMigrations)
+	if _, err := Merge(ctx, a.db, b.path, MergeOptions{}); err == nil ||
+		!strings.Contains(err.Error(), "same layout") {
+		t.Errorf("other migrations: err = %v", err)
+	}
+
+	// And a refused merge detaches, so the next one can attach again.
+	b.exec(t, `UPDATE meta SET value = ? WHERE key = ?`, strconv.Itoa(len(migrations)), MetaMigrations)
 	if _, err := Merge(ctx, a.db, b.path, MergeOptions{}); err != nil {
 		t.Errorf("a merge after a refused one: %v", err)
 	}

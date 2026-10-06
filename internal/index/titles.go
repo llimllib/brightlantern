@@ -7,12 +7,10 @@ import (
 
 // addedColumns are columns added to an existing table after the fact.
 //
-// A schema-version bump is the other way to do this, and it is the wrong one
-// here: bumping discards the database and rebuilds it, which means re-embedding
-// 46k chunks -- minutes of GPU time -- to gain two nullable columns that start
-// out NULL anyway. The version exists for changes that make an old index
-// *unusable*; an index without these columns is merely an index with no titles
-// yet, which is the state every index starts in.
+// These predate migrations, which is the only reason they are not entries
+// there: an index from before either exists may lack them, and checking for
+// each column is what lets that index gain them whatever else it records. New
+// columns belong in migrations.
 //
 // ALTER TABLE ADD COLUMN is O(1) in SQLite and the added column reads as NULL
 // for existing rows, so this is safe to run on every open.
@@ -27,8 +25,8 @@ var addedColumns = []struct{ table, column, decl string }{
 	{"sessions", "title_msgs", "INTEGER"},
 }
 
-// migrate applies additive column changes to an existing index.
-func (d *DB) migrate() error {
+// addColumns applies addedColumns to an index that lacks any of them.
+func (d *DB) addColumns() error {
 	for _, c := range addedColumns {
 		has, err := d.hasColumn(c.table, c.column)
 		if err != nil {

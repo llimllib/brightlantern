@@ -8,18 +8,13 @@ package index
 
 import (
 	"database/sql"
-	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
-	"strconv"
-
-	"github.com/llimllib/spireweb/internal/session"
 )
 
-// SchemaVersion is bumped whenever the layout changes in a way that makes an
-// existing index unusable. Open refuses to use a database written by a
-// different version rather than failing in confusing ways later.
+// SchemaVersion is frozen at 1. Layout changes are migrations; see
+// migrations.go for why this number can never move.
 const SchemaVersion = 1
 
 // Meta keys. The embedding model and chunk size are recorded because an index
@@ -60,7 +55,7 @@ CREATE TABLE IF NOT EXISTS sessions (
   -- so a missing title is never a blank row.
   --
   -- The pass's bookkeeping columns -- title_key and title_msgs -- are added by
-  -- migrate() rather than declared here, so that an index built before they
+  -- addColumns() rather than declared here, so that an index built before they
   -- existed gains them without being rebuilt. See addedColumns.
   title       TEXT
 );
@@ -170,8 +165,9 @@ func DefaultPath() string {
 //   - WAL keeps reads working while indexing writes, so search works against a
 //     partially built index.
 //   - synchronous=NORMAL is safe under WAL and much faster. The worst case is
-//     losing the last few transactions on power loss, and the index is derived
-//     data that can always be rebuilt from the session files.
+//     losing the last few transactions on power loss. The archive is not
+//     derived data, but its newest rows are the ones whose session files are
+//     still there to restore them from.
 //   - busy_timeout avoids spurious SQLITE_BUSY between the writer and handlers.
 //   - foreign_keys is load-bearing: chunks.session_id declares ON DELETE
 //     CASCADE.
@@ -289,85 +285,6 @@ func (d *DB) Optimize() error {
 func (d *DB) Checkpoint() error {
 	_, err := d.sql.Exec(`PRAGMA wal_checkpoint(TRUNCATE)`)
 	return err
-}
-
-func (d *DB) init() error {
-	if _, err := d.sql.Exec(schema); err != nil {
-		return fmt.Errorf("create schema: %w", err)
-	}
-
-	if err := d.migrate(); err != nil {
-		return err
-	}
-
-	if _, err := d.sql.Exec(views); err != nil {
-		return fmt.Errorf("create views: %w", err)
-	}
-
-	got, err := d.Meta(MetaSchemaVersion)
-	if err != nil {
-		return err
-	}
-	switch got {
-	case "":
-		if err := d.SetMeta(MetaSchemaVersion, strconv.Itoa(SchemaVersion)); err != nil {
-			return err
-		}
-		return d.SetMeta(MetaChunkChars, strconv.Itoa(session.MaxChunkChars))
-	case strconv.Itoa(SchemaVersion):
-		return nil
-	default:
-		return &StaleIndexError{Path: d.path, Found: got, Want: SchemaVersion}
-	}
-}
-
-// StaleIndexError reports an index written by a different schema version.
-//
-// A distinct type rather than a plain error so callers can recover: the index is
-// a derived cache that can always be rebuilt from the session files, so the right
-// response is to discard and rebuild it, not to make the user run a command.
-type StaleIndexError struct {
-	Path  string
-	Found string
-	Want  int
-}
-
-func (e *StaleIndexError) Error() string {
-	return fmt.Sprintf("index at %s has schema version %s, this build expects %d",
-		e.Path, e.Found, e.Want)
-}
-
-// Reset deletes the index files and recreates an empty database.
-//
-// Everything in the index is derived from the session files, so discarding it
-// loses nothing but the time to rebuild.
-func Reset(path, driver string) (*DB, error) {
-	// -wal and -shm must go too, or SQLite may recover the old content.
-	for _, suffix := range []string{"", "-wal", "-shm"} {
-		if err := os.Remove(path + suffix); err != nil && !os.IsNotExist(err) {
-			return nil, fmt.Errorf("removing stale index %s%s: %w", path, suffix, err)
-		}
-	}
-	return Open(path, driver)
-}
-
-// OpenOrReset opens the index, rebuilding it from scratch if it was written by a
-// different schema version. The bool reports whether a reset happened, so the
-// caller can tell the user why indexing is about to run.
-func OpenOrReset(path, driver string) (*DB, bool, error) {
-	db, err := Open(path, driver)
-	if err == nil {
-		return db, false, nil
-	}
-	var stale *StaleIndexError
-	if !errors.As(err, &stale) {
-		return nil, false, err
-	}
-	db, err = Reset(path, driver)
-	if err != nil {
-		return nil, false, err
-	}
-	return db, true, nil
 }
 
 // Close closes the database.
