@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net"
 	"net/http"
 	"os"
 	"os/exec"
@@ -22,9 +23,21 @@ import (
 	"github.com/llimllib/brightlantern/internal/web"
 )
 
-func runServe(dbPath, addr string, dirs []string, dev, launchBrowser, noWatch bool, titlesVia string) error {
+func runServe(dbPath, addr string, dirs []string, dev, launchBrowser, noWatch, wait bool, titlesVia string) error {
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
 	// First, before anything that writes or loads: see listen.
-	ln, err := listen(addr)
+	var ln net.Listener
+	var err error
+	if wait {
+		ln, err = listenWhenFree(ctx, addr)
+		if ctx.Err() != nil {
+			return nil // stopped while waiting, which is not a failure
+		}
+	} else {
+		ln, err = listen(addr)
+	}
 	if err != nil {
 		return err
 	}
@@ -52,9 +65,6 @@ func runServe(dbPath, addr string, dirs []string, dev, launchBrowser, noWatch bo
 	if err != nil {
 		return err
 	}
-
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
 
 	opts := web.Options{Dev: dev, Version: Version, IndexPath: dbPath}
 	var status *pendingStatus

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -68,11 +69,54 @@ func listen(addr string) (net.Listener, error) {
 		return ln, err
 	}
 	if in := probeInstance(addr); in != nil {
-		return nil, fmt.Errorf("brightlantern %s is already running on http://%s, serving %s",
-			in.Version, dialable(addr), in.Index)
+		return nil, portTakenError(fmt.Sprintf("brightlantern %s is already running on http://%s, serving %s",
+			in.Version, dialable(addr), in.Index))
 	}
-	return nil, fmt.Errorf("%s is in use by another program; "+
-		"set addr in %s or pass --addr", addr, config.Path())
+	return nil, portTakenError(fmt.Sprintf("%s is in use by another program; "+
+		"set addr in %s or pass --addr", addr, config.Path()))
+}
+
+// portTakenError is listen's error for an address in use: a type rather than a
+// wrapped sentinel, so the message reads as written instead of ending in
+// ": address in use".
+type portTakenError string
+
+func (e portTakenError) Error() string { return string(e) }
+
+// waitInterval is how often a waiting serve tries the port again.
+var waitInterval = 5 * time.Second
+
+// listenWhenFree is listen for the LaunchAgent, which runs serve --wait.
+//
+// Under KeepAlive, a serve that exits because someone started brightlantern
+// by hand first is restarted by launchd every ten seconds for as long as that
+// one runs, logging a failure each time. Waiting instead logs once, holds
+// nothing -- the index and the model are opened only after the port is
+// bound -- and takes over within seconds of the other one quitting.
+func listenWhenFree(ctx context.Context, addr string) (net.Listener, error) {
+	waiting := false
+	for {
+		ln, err := listen(addr)
+		if err == nil {
+			if waiting {
+				note("%s is free; starting", addr)
+			}
+			return ln, nil
+		}
+		var taken portTakenError
+		if !errors.As(err, &taken) {
+			return nil, err
+		}
+		if !waiting {
+			note("%v; waiting for it to come free", err)
+			waiting = true
+		}
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-time.After(waitInterval):
+		}
+	}
 }
 
 // errDaemonWriting is returned by index when a server is already keeping the
@@ -101,12 +145,18 @@ func samePath(a, b string) bool {
 	return canonical(a) == canonical(b)
 }
 
+// canonical is p made absolute with symlinks resolved -- through its directory
+// when the file does not exist yet, which is serve's case on a first run, so
+// that /var and /private/var on macOS do not make one index look like two.
 func canonical(p string) string {
 	if abs, err := filepath.Abs(p); err == nil {
 		p = abs
 	}
 	if real, err := filepath.EvalSymlinks(p); err == nil {
-		p = real
+		return real
+	}
+	if dir, err := filepath.EvalSymlinks(filepath.Dir(p)); err == nil {
+		return filepath.Join(dir, filepath.Base(p))
 	}
 	return filepath.Clean(p)
 }

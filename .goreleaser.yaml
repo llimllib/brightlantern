@@ -142,11 +142,11 @@ homebrew_casks:
         end
       end
     caveats: |
-      Bright Lantern indexes your agent sessions on first run.
+      Run `brightlantern` once from a terminal: it finds your agent sessions
+      and indexes them. Then `brightlantern service install` keeps it running
+      at login, and `brightlantern service restart` picks up an upgrade.
 
-      The first semantic search compiles Metal shaders and takes about
-      15 seconds; subsequent runs are instant until macOS evicts its
-      shader cache.
+      Titles are generated on-device and need Apple Intelligence turned on.
 
 release:
   footer: |

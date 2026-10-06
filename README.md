@@ -31,15 +31,35 @@ and indexes everything it finds. What it found is written to
 agent later does not silently change what is indexed. Edit that file, or pass
 `--dir` (repeatable), to choose differently.
 
-The first search after a while takes about fifteen seconds while macOS compiles
-the embedding model's Metal shaders. It says so when it happens.
+After a while away, semantic search takes about fifteen seconds to arrive while
+macOS compiles the embedding model's Metal shaders. The page and keyword search
+work in the meantime.
+
+## Run at login
+
+```bash
+brightlantern                    # once, from a terminal: finds your sessions
+brightlantern service install    # then keep it running
+```
+
+That installs a LaunchAgent, so the index stays current and search stays warm
+with no terminal open. Logs are in `~/Library/Logs/brightlantern/`.
+`brightlantern service status` says what it is doing, and `service uninstall`
+removes it. After `brew upgrade`, `service restart` picks up the new binary.
+
+Typing `brightlantern` while the agent runs says it is already running rather
+than starting a second copy, and `brightlantern index` declines to write the
+same index unless given `--force`.
 
 ## Titles
 
 Sessions are listed under a generated title, falling back to their opening
-message. Two backends, set with `titles` in the config file or `--titles-via`:
+message. Three backends, set with `titles` in the config file or `--titles-via`:
 
-- `api` needs `ANTHROPIC_API_KEY`. The default.
+- `apple` uses Apple's on-device model: no key, no bill, nothing leaves the
+  machine. The default, and the only one that works when running at login.
+  Needs Apple Intelligence turned on.
+- `api` needs `ANTHROPIC_API_KEY`.
 - `claude` shells out to the Claude Code CLI, which bills whatever subscription
   it is signed in to and shares a rate limit with your interactive sessions. A
   run over a large corpus asks first. `--titles N` caps it, for trying it out.
@@ -83,7 +103,7 @@ The session id opens in the browser at `/sessions/<id>`.
 ```bash
 mise run setup    # embedding model + sqlite-lembed, once
 mise run index    # build the search index
-mise run dev      # http://localhost:5268
+mise run dev      # http://localhost:5269, reading the index the agent keeps
 mise run check    # vet, lint, typecheck, gofmt, test
 ```
 

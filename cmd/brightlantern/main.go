@@ -35,6 +35,8 @@ usage:
   brightlantern stats [flags]   report what is in the index
   brightlantern doctor [flags]  check the index for inconsistencies
   brightlantern info            show paths and configuration
+  brightlantern service install|uninstall|restart|status
+                           run at login as a LaunchAgent
   brightlantern version
   brightlantern help
 
@@ -49,6 +51,8 @@ flags:
   --dev          reload templates and static files from disk per request
   --open         open a browser once the server is listening
   --no-watch     do not index in the background while serving
+  --wait         if the address is taken, wait for it to come free rather
+                 than exiting (what the LaunchAgent runs)
   --no-titles    do not generate session titles (same as titles = "off")
   --titles N     stop after generating N titles (0 for no limit)
   --titles-via   apple (Apple's on-device model: no key, no bill),
@@ -88,6 +92,7 @@ func main() {
 	openBrowser := fs.Bool("open", false, "open a browser once listening")
 	noWatch := fs.Bool("no-watch", false, "do not index in the background")
 	force := fs.Bool("force", false, "index even while a server is keeping the index current")
+	wait := fs.Bool("wait", false, "if the address is taken, wait for it rather than exiting")
 	_ = fs.Bool("no-titles", false, "do not generate session titles") // read via givenFlags
 	// Titling the whole corpus costs real money. A limit makes a trial run
 	// possible -- newest sessions first, so it titles what is worth looking at
@@ -103,7 +108,7 @@ func main() {
 		if s, serr := resolve(givenFlags(fs), dirs, *dbPath, *addr, *titleVia); serr != nil {
 			err = serr
 		} else {
-			err = runServe(s.dbPath, s.addr, s.dirs, *dev, *openBrowser, *noWatch, s.titles)
+			err = runServe(s.dbPath, s.addr, s.dirs, *dev, *openBrowser, *noWatch, *wait, s.titles)
 		}
 	case "index":
 		_ = fs.Parse(args)
@@ -130,6 +135,20 @@ func main() {
 	case "info":
 		_ = fs.Parse(args)
 		err = runInfo(configuredDB(givenFlags(fs), *dbPath), dirs)
+	case "service":
+		// Its own subcommands come before any flags: service install --addr X.
+		sub, rest := args, []string(nil)
+		if len(args) > 0 {
+			sub, rest = args[:1], args[1:]
+		}
+		_ = fs.Parse(rest)
+		addrFor := *addr
+		if !givenFlags(fs)["addr"] {
+			if cfg, _, cerr := config.Load(); cerr == nil && cfg.Addr != "" {
+				addrFor = cfg.Addr
+			}
+		}
+		err = runService(sub, addrFor)
 	case "version":
 		fmt.Println("brightlantern", Version)
 	case "help":

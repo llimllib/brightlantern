@@ -57,7 +57,7 @@ func TestServeOnATakenPortTouchesNothing(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			dbPath := filepath.Join(t.TempDir(), "index.db")
-			err := runServe(dbPath, tc.addr(t), nil, false, false, false, "off")
+			err := runServe(dbPath, tc.addr(t), nil, false, false, false, false, "off")
 			if err == nil || !strings.Contains(err.Error(), tc.want) {
 				t.Fatalf("runServe() = %v; want an error containing %q", err, tc.want)
 			}
@@ -123,5 +123,23 @@ func TestDialable(t *testing.T) {
 		if got := dialable(in); got != want {
 			t.Errorf("dialable(%q) = %q, want %q", in, got, want)
 		}
+	}
+}
+
+// A database that does not exist yet still gets the same name as it will
+// once it does, or a daemon on a fresh index would not be recognised.
+func TestCanonicalResolvesThroughTheDirectory(t *testing.T) {
+	real := t.TempDir()
+	link := filepath.Join(t.TempDir(), "link")
+	if err := os.Symlink(real, link); err != nil {
+		t.Fatal(err)
+	}
+	before := canonical(filepath.Join(link, "index.db"))
+	if err := os.WriteFile(filepath.Join(real, "index.db"), nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	after := canonical(filepath.Join(link, "index.db"))
+	if before != after {
+		t.Errorf("canonical before creation = %q, after = %q; want the same", before, after)
 	}
 }

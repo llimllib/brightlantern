@@ -468,6 +468,39 @@ waiting for it. Until the writer exists `/status` reports `starting`, because
 an empty response removes the header's poller and the page would never notice
 the indexer arrive.
 
+## Run at login
+
+`brightlantern service install` writes
+`~/Library/LaunchAgents/org.billmill.brightlantern.plist` and bootstraps it
+into `gui/$UID`. The label is the bundle identifier, so M14's `SMAppService`
+registers the same job (#74), and it must never change.
+
+- **`serve --wait`, not `serve`.** `KeepAlive` restarts a `serve` that exits,
+  and one exits whenever someone typed `brightlantern` first -- every ten
+  seconds, a log line each time, for as long as theirs runs. `--wait` logs once
+  and retries the port; it holds nothing while waiting, because the index and
+  the model open only after the port is bound. Tested under launchd: one run,
+  never exited, took over within five seconds.
+- **The plist names the unresolved executable**, the opposite of
+  `embed.DefaultPaths`. Homebrew's symlink is the stable name; its target is a
+  versioned Caskroom directory that `brew upgrade` deletes. A `go run` binary
+  is refused, being gone the moment it exits.
+- **`install` refuses without a settings file.** A first run under launchd
+  would detect session directories in launchd's environment and write that
+  answer down for good.
+- **No `EnvironmentVariables`.** The plist gets pasted into issues, and
+  `apple` titles need nothing from the environment. `api` and `claude` do not
+  work under launchd, and `install` says so rather than working around it.
+- Logs go to `~/Library/Logs/brightlantern/brightlantern.log`, both streams in
+  one file: every `note()` is stderr and the startup line is stdout, and they
+  only make sense interleaved. Nothing rotates it; `serve` is quiet.
+- `mise run dev` serves on 5269 with `--no-watch`, beside the agent rather
+  than against it.
+
+Nothing tests `launchctl` itself. The plist is checked with `plutil -lint`;
+the rest was exercised under launchd by hand, with a throwaway label, port and
+index, which is the way to test a change here without touching the real agent.
+
 ## Titles
 
 `sessions.title` is written by `internal/titles`, a pass that runs *after* a

@@ -106,7 +106,10 @@ run = "./brightlantern index"
 [tasks."dev:go"]
 description = "Run the server, rebuilding on change"
 depends = ["apple"]
-run = "wgo run ./cmd/brightlantern serve --dev"
+# Beside the LaunchAgent rather than instead of it: its own port, and reading
+# only. A second writer on the same index is what serve and index go out of
+# their way to prevent, and the agent is already keeping it current.
+run = "wgo run ./cmd/brightlantern serve --dev --addr 127.0.0.1:5269 --no-watch"
 
 [tasks."dev:ts"]
 description = "Compile TypeScript on change"
