@@ -190,6 +190,33 @@ for someone who has a key and has been getting them.
 XDG, not `~/Library/Application Support`, matching `SPIREWEB_DATA_DIR` and
 `embed.DefaultPaths`.
 
+## Where the index lives
+
+`$XDG_DATA_HOME/spireweb/index.db`, else `~/.local/share/spireweb/index.db`,
+beside the model. **Not a cache directory**, which is where v0.0.2 and earlier
+kept it: macOS may empty `~/Library/Caches` under disk pressure, and cleanup
+tools empty it on sight. That was harmless while the index was derived; the
+archive and the titles are not.
+
+An index at the old path is **moved**, on the first run that resolves the
+default -- not rebuilt beside it, which would re-embed everything and look as
+though it had all been lost. Only the default moves: `--db` and the settings
+file's `index` are where someone wants it. `index.Relocate` never fails; it
+leaves the index where it is and says why:
+
+- **In use**: a `serve` from before the upgrade has it open, and renaming a
+  database under an open connection splits it -- that process keeps writing
+  to the moved file while anything opening the old path gets an empty one. The
+  test is an exclusive lock, because in WAL mode every open connection holds a
+  shared one for its whole life. **Not the `-wal` file**: Apple's SQLite keeps
+  it after a clean close, so a database nobody has open can have one.
+- **The rename failed**, e.g. across volumes. Copying instead would make a
+  second 500MB index that silently diverges from the first.
+
+`-wal` and `-shm` move with it, and a failure part way puts back what moved.
+The cmd tests sandbox `XDG_DATA_HOME` and `XDG_CACHE_HOME` as well as `HOME`;
+without that, a test resolving the default would move the real index.
+
 ## Storage
 
 - `chunks.id` is `AUTOINCREMENT`. A plain `INTEGER PRIMARY KEY` reuses rowids

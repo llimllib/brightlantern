@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/llimllib/spireweb/internal/config"
+	"github.com/llimllib/spireweb/internal/index"
 )
 
 // sandbox redirects both the settings file and the probed session directories
@@ -19,6 +20,10 @@ func sandbox(t *testing.T) (home string) {
 	home = t.TempDir()
 	t.Setenv("HOME", home)
 	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, "xdg"))
+	// Data and cache too, or the index default and the legacy location it is
+	// moved from would be the real ones.
+	t.Setenv("XDG_DATA_HOME", "")
+	t.Setenv("XDG_CACHE_HOME", "")
 	t.Setenv("CLAUDE_CONFIG_DIR", "")
 	return home
 }
@@ -242,5 +247,65 @@ func TestSlowNoteSpeaksWhenSlow(t *testing.T) {
 	}
 	if !strings.Contains(string(out), "the thing is slow") {
 		t.Errorf("slowNote printed %q, want the message", out)
+	}
+}
+
+// placeLegacyIndex puts a file where v0.0.2 kept the index.
+func placeLegacyIndex(t *testing.T) string {
+	t.Helper()
+	legacy := index.LegacyPath()
+	if err := os.MkdirAll(filepath.Dir(legacy), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	db, err := index.Open(legacy, index.DriverName)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
+	return legacy
+}
+
+// The default index moves out of the cache directory on the first run after
+// upgrading, rather than being rebuilt beside it.
+func TestResolveMovesTheDefaultIndex(t *testing.T) {
+	home := sandbox(t)
+	writeConfig(t, config.Config{Dirs: []string{installSessions(t, filepath.Join(home, "s"))}})
+	legacy := placeLegacyIndex(t)
+
+	s, err := resolve(map[string]bool{}, nil, index.DefaultPath(), "127.0.0.1:8080", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s.dbPath != index.DefaultPath() {
+		t.Errorf("dbPath = %q, want %q", s.dbPath, index.DefaultPath())
+	}
+	if _, err := os.Stat(s.dbPath); err != nil {
+		t.Errorf("nothing at the new path: %v", err)
+	}
+	if _, err := os.Stat(legacy); err == nil {
+		t.Error("the index is still in the cache directory")
+	}
+	if got := configuredDB(map[string]bool{}, index.DefaultPath()); got != index.DefaultPath() {
+		t.Errorf("configuredDB = %q after the move, want the new path", got)
+	}
+}
+
+// A location someone wrote down is where they want it.
+func TestResolveLeavesAConfiguredIndexAlone(t *testing.T) {
+	home := sandbox(t)
+	legacy := placeLegacyIndex(t)
+	writeConfig(t, config.Config{Dirs: []string{installSessions(t, filepath.Join(home, "s"))}, Index: legacy})
+
+	s, err := resolve(map[string]bool{}, nil, index.DefaultPath(), "127.0.0.1:8080", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s.dbPath != legacy {
+		t.Errorf("dbPath = %q, want the configured %q", s.dbPath, legacy)
+	}
+	if _, err := os.Stat(legacy); err != nil {
+		t.Errorf("the configured index moved: %v", err)
 	}
 }

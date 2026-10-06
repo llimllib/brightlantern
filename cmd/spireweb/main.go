@@ -693,8 +693,12 @@ func resolve(given map[string]bool, flagged dirList, dbPath, addr, titleVia stri
 	}
 
 	s := settings{dbPath: dbPath, addr: addr}
-	if !given["db"] && cfg.Index != "" {
+	switch {
+	case given["db"]:
+	case cfg.Index != "":
 		s.dbPath = cfg.Index
+	default:
+		s.dbPath = defaultDB()
 	}
 	if !given["addr"] && cfg.Addr != "" {
 		s.addr = cfg.Addr
@@ -789,7 +793,25 @@ func configuredDB(given map[string]bool, flagged string) string {
 	if cfg, _, err := config.Load(); err == nil && cfg.Index != "" {
 		return cfg.Index
 	}
-	return flagged
+	return defaultDB()
+}
+
+// defaultDB is the index location when neither --db nor the settings file
+// names one, moving an index from where v0.0.2 and earlier kept it.
+//
+// Only the default moves. A path someone wrote down is where they want it,
+// even if that is ~/Library/Caches.
+func defaultDB() string {
+	r := index.Relocate(index.DefaultPath(), index.LegacyPath())
+	switch {
+	case r.Moved != "":
+		note("moved the index from %s to %s, where macOS will not delete it", r.Moved, r.Path)
+	case r.Stayed != "":
+		note("using the index at %s, where macOS may delete it: %s. It moves to %s "+
+			"on a later run, or set index in %s to keep it here", r.Path, r.Stayed,
+			index.DefaultPath(), config.Path())
+	}
+	return r.Path
 }
 
 // slowNote prints a message if whatever follows has not finished within d,

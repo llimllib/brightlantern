@@ -151,15 +151,6 @@ type DB struct {
 	path string
 }
 
-// DefaultPath is where the index lives. It is a cache: everything in it is
-// derived from the session files and can be rebuilt.
-func DefaultPath() string {
-	if dir, err := os.UserCacheDir(); err == nil {
-		return filepath.Join(dir, "spireweb", "index.db")
-	}
-	return "spireweb-index.db"
-}
-
 // pragmas are applied to every connection, writer and reader alike.
 //
 //   - WAL keeps reads working while indexing writes, so search works against a
