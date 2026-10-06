@@ -51,9 +51,10 @@ flags:
   --no-watch     do not index in the background while serving
   --no-titles    do not generate session titles (same as titles = "off")
   --titles N     stop after generating N titles (0 for no limit)
-  --titles-via   api (ANTHROPIC_API_KEY) or claude (the Claude Code CLI,
-                 which bills a Pro/Max subscription rather than the API).
-                 Defaults to the settings file's titles value.
+  --titles-via   apple (Apple's on-device model: no key, no bill),
+                 claude (the Claude Code CLI, which bills a Pro/Max
+                 subscription), or api (ANTHROPIC_API_KEY). Defaults to the
+                 settings file's titles value.
 `
 
 // command splits the subcommand from its flags, defaulting to serve.
@@ -92,7 +93,7 @@ func main() {
 	// possible -- newest sessions first, so it titles what is worth looking at
 	// -- before committing to all eleven hundred.
 	titleLimit := fs.Int("titles", 0, "stop after generating N titles")
-	titleVia := fs.String("titles-via", titles.BackendAPI, "api or claude")
+	titleVia := fs.String("titles-via", titles.BackendApple, "apple, claude or api")
 	fs.Usage = func() { fmt.Fprintf(os.Stderr, usage, index.DefaultPath()) }
 
 	var err error
@@ -450,8 +451,8 @@ func runTitles(ctx context.Context, db *index.DB, limit int, via string) error {
 				return
 			}
 			lastReport = time.Now()
-			fmt.Printf("\r\033[K%d/%d  titled %d  unchanged %d  failed %d",
-				p.Done, p.Total, p.Titled, p.Cached, p.Failed)
+			fmt.Printf("\r\033[K%d/%d  titled %d  unchanged %d  declined %d  failed %d",
+				p.Done, p.Total, p.Titled, p.Cached, p.Declined, p.Failed)
 		},
 	})
 	if p.Total > 0 {
@@ -463,6 +464,10 @@ func runTitles(ctx context.Context, db *index.DB, limit int, via string) error {
 	if p.Titled > 0 {
 		fmt.Printf("titled %d sessions with %s in %s\n",
 			p.Titled, s.Name(), time.Since(start).Round(time.Millisecond))
+	}
+	if p.Declined > 0 {
+		note("the model declined to title %d sessions; they keep their opening message "+
+			"until they change", p.Declined)
 	}
 	if p.Failed > 0 {
 		// One reason, not p.Failed of them: when this goes wrong it is almost
@@ -716,7 +721,7 @@ func resolve(given map[string]bool, flagged dirList, dbPath, addr, titleVia stri
 	case cfg.Titles != "":
 		s.titles = cfg.Titles
 	default:
-		s.titles = config.TitlesAPI
+		s.titles = config.TitlesApple
 	}
 
 	var from string
@@ -733,12 +738,12 @@ func resolve(given map[string]bool, flagged dirList, dbPath, addr, titleVia stri
 	if from == sourceDetected && !hadFile {
 		cfg.Dirs = s.dirs
 		if cfg.Titles == "" {
-			// What brightlantern does today, written down rather than changed. A
-			// first run must not quietly turn titles off for someone who has
-			// ANTHROPIC_API_KEY set and has been getting them all along; the
-			// comments in the file are what tell a Claude Code user that
-			// "claude" is the setting for them.
-			cfg.Titles = config.TitlesAPI
+			// The on-device model: it needs no key and costs nothing, so there
+			// is nobody to ask before using it, and it is the only backend a
+			// LaunchAgent can reach. On a Mac without Apple Intelligence the
+			// titles pass says so once and the list shows opening messages;
+			// the comments in the file name the alternatives.
+			cfg.Titles = config.TitlesApple
 		}
 		if cfg.Addr == "" {
 			// Written down rather than left to default, because other processes

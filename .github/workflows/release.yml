@@ -11,9 +11,13 @@ jobs:
   release:
     # Not ubuntu, unlike CI. The binary needs cgo -- go-sqlite3, the sqlite-vec
     # bindings and FTS5 all do -- so it has to be built on the platform it runs
-    # on. macos-latest is arm64, which is the only target .goreleaser.yaml
-    # declares, so nothing is cross-compiled.
-    runs-on: macos-latest
+    # on. arm64, which is the only target .goreleaser.yaml declares, so nothing
+    # is cross-compiled.
+    #
+    # Pinned to 26 rather than latest: the titles helper links FoundationModels,
+    # which needs the macOS 26 SDK, and an image change should be a decision
+    # rather than something a release discovers.
+    runs-on: macos-26
 
     steps:
       - uses: actions/checkout@v7

@@ -22,6 +22,7 @@ import (
 // asked yet" are different states and the titles pass acts on the difference.
 const (
 	TitlesOff    = "off"
+	TitlesApple  = "apple"
 	TitlesAPI    = "api"
 	TitlesClaude = "claude"
 )
@@ -118,7 +119,9 @@ func (c Config) SaveTo(path string) error {
 	}
 	b.WriteString("]\n\n")
 
-	b.WriteString("# How session titles are generated: claude, api, or off.\n")
+	b.WriteString("# How session titles are generated: apple, claude, api, or off.\n")
+	b.WriteString("#   apple   Apple's on-device model; no key, no bill, nothing leaves\n")
+	b.WriteString("#           the machine. Needs Apple Intelligence turned on\n")
 	b.WriteString("#   claude  shells out to the Claude Code CLI, billing whatever\n")
 	b.WriteString("#           subscription it is signed in to\n")
 	b.WriteString("#   api     needs ANTHROPIC_API_KEY\n")

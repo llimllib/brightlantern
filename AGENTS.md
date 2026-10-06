@@ -475,14 +475,40 @@ build and never during one: both write, and the writer is one connection.
 Without a backend the pass is skipped with a note and every row falls back to
 its opening message, which is what the list did for five milestones.
 
-Two backends, chosen with `--titles-via`:
+Three backends, chosen with `--titles-via`:
 
+- `apple`, the default, is Apple's on-device model through
+  `brightlantern-apple`, a Swift helper in `cmd/brightlantern-apple` built by
+  `mise run apple` with plain `swiftc` -- FoundationModels is in the Command
+  Line Tools SDK, so no Xcode. No key, no bill, no network, no PATH, which
+  makes it **the only backend that works under launchd** (#70). Measured on 200
+  sessions as a LaunchAgent: 199 titled, 1 declined, no rate limiting, 1.66s a
+  title at `AppleConcurrency` 2 -- four is no faster, the model is local.
+  Quality is moderately below Haiku and was accepted for that (#84).
 - `api` needs `ANTHROPIC_API_KEY`, and `ANTHROPIC_BASE_URL` points it at a fake
   or a gateway. ~1s a call.
 - `claude` shells out to `claude -p`, which bills whatever authentication
   Claude Code has, including a Pro or Max subscription. ~4.5s a call, nearly
   all of it starting Node, so `CLIConcurrency` is 4 rather than 8 -- and its
   rate limit is shared with the interactive sessions the subscription is for.
+
+The helper is a separate process, not cgo: a crash in cgo cannot be recovered
+(see sqlite-lembed), and a crashed helper costs one title. It takes the
+instructions and prompt as JSON on stdin, so the system prompt has one
+definition. `blacktop/go-foundationmodels` does not build from `go get`: it
+links a `libFMShim.a` that `go generate` makes and the read-only module cache
+cannot hold. The helper ships beside the binary and `embed.Beside` finds it
+the way it finds the dylib; `mise run apple` is a no-op off macOS, so CI's
+Linux build is unaffected, and the release runner is pinned to `macos-26` for
+the SDK.
+
+**A refusal is an answer, not a failure.** The on-device model has guardrails,
+and they are not subtle: the one session of 200 it declined was about speeding
+up `rmtree`. Exit 4 from the helper -- `guardrailViolation`, `refusal`, too
+long, unsupported language -- becomes `ErrDeclined`, and the pass marks the
+session checked like one with no prose. A failure records nothing and retries,
+which for a refusal would mean asking again after every change the watcher
+sees. `rateLimited` and everything else stay failures.
 
 There is no `auto`. Picking the CLI because no API key was set would spend a
 subscription's rate limit on a thousand sessions without being asked; the

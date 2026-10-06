@@ -465,3 +465,21 @@ func (e *Embedder) EmbedText(ctx context.Context, text string) ([]byte, error) {
 	}
 	return blob, nil
 }
+
+// Beside finds a file shipped with brightlantern, in the same places and the
+// same order as the extension and the model: the data directory override,
+// beside the running executable, then the default data directory.
+//
+// For anything else the release archive carries next to the binary -- the
+// on-device titles helper is the reason it exists. Returns the path where it
+// would be installed by default when it is nowhere, so an error can name it.
+func Beside(name string) (string, bool) {
+	dirs := candidateDirs()
+	for _, dir := range dirs {
+		p := filepath.Join(dir, name)
+		if _, err := os.Stat(p); err == nil {
+			return p, true
+		}
+	}
+	return filepath.Join(dirs[len(dirs)-1], name), false
+}

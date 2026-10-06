@@ -143,7 +143,7 @@ func TestResolveTitles(t *testing.T) {
 		{"--titles-via beats the file", map[string]bool{"titles-via": true}, "claude", config.TitlesAPI, config.TitlesClaude},
 		{"the file is used", map[string]bool{}, "api", config.TitlesClaude, config.TitlesClaude},
 		{"off is honoured", map[string]bool{}, "api", config.TitlesOff, config.TitlesOff},
-		{"api by default", map[string]bool{}, "api", "", config.TitlesAPI},
+		{"apple by default", map[string]bool{}, "api", "", config.TitlesApple},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -182,10 +182,10 @@ func TestResolveWritesTheFileOnFirstRun(t *testing.T) {
 	if !slices.Equal(cfg.Dirs, []string{detected}) {
 		t.Errorf("dirs = %v, want %v", cfg.Dirs, []string{detected})
 	}
-	// Not "off": a first run must not quietly stop titling for someone who has
-	// been getting titles all along.
-	if cfg.Titles != config.TitlesAPI {
-		t.Errorf("titles = %q, want %q", cfg.Titles, config.TitlesAPI)
+	// The on-device model: free, keyless, and the only one a LaunchAgent can
+	// reach, so nobody needs asking before it is used.
+	if cfg.Titles != config.TitlesApple {
+		t.Errorf("titles = %q, want %q", cfg.Titles, config.TitlesApple)
 	}
 	// Written rather than left absent: other processes read the file to find
 	// the server.

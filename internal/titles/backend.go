@@ -11,6 +11,12 @@ const (
 	// authentication Claude Code has -- including a Pro or Max subscription,
 	// so the pass costs no API credit and needs no key.
 	BackendClaude = "claude"
+
+	// BackendApple uses Apple's on-device model: no key, no bill, no network.
+	// The only backend that works under launchd. Named for the provider rather
+	// than "local", so that another local model can be added without the name
+	// lying.
+	BackendApple = "apple"
 )
 
 // NewSummarizer builds the chosen backend.
@@ -39,9 +45,11 @@ func NewSummarizer(backend string) (Summarizer, error) {
 		return s, nil
 	case BackendClaude:
 		return NewClaudeCLI()
+	case BackendApple:
+		return NewApple()
 	default:
-		return nil, fmt.Errorf("unknown titles backend %q, want %q or %q",
-			backend, BackendAPI, BackendClaude)
+		return nil, fmt.Errorf("unknown titles backend %q, want %q, %q or %q",
+			backend, BackendApple, BackendClaude, BackendAPI)
 	}
 }
 
@@ -50,8 +58,11 @@ func NewSummarizer(backend string) (Summarizer, error) {
 // The CLI is a process per call rather than a request, and its rate limit is
 // a subscription's, so it gets a smaller number.
 func ConcurrencyFor(s Summarizer) int {
-	if _, ok := s.(*ClaudeCLI); ok {
+	switch s.(type) {
+	case *ClaudeCLI:
 		return CLIConcurrency
+	case *Apple:
+		return AppleConcurrency
 	}
 	return DefaultConcurrency
 }

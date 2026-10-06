@@ -42,9 +42,25 @@ run = "pnpm exec tsc"
 sources = ["internal/web/ts/*.ts", "tsconfig.json"]
 outputs = ["internal/web/static/app.js"]
 
+[tasks.apple]
+description = "Build the on-device titles helper into the data directory"
+# Swift, compiled with plain swiftc: FoundationModels ships in the Command Line
+# Tools SDK, so no Xcode. Into the data directory rather than beside
+# ./brightlantern because that is where embed.Beside looks for a binary that
+# moves -- go run's lives in a temp directory -- the same place setup puts the
+# extension. A no-op off macOS, so CI's Linux build still works; there is
+# nothing to build it against there.
+sources = ["cmd/brightlantern-apple/*.swift"]
+outputs = ["{{env.BRIGHTLANTERN_DATA_DIR}}/brightlantern-apple"]
+run = '''
+if [ "$(uname)" != Darwin ]; then echo "apple: not macOS, skipping"; exit 0; fi
+mkdir -p "$BRIGHTLANTERN_DATA_DIR"
+swiftc -O -target arm64-apple-macos26.0 -o "$BRIGHTLANTERN_DATA_DIR/brightlantern-apple" cmd/brightlantern-apple/main.swift
+'''
+
 [tasks.build]
 description = "Build the brightlantern binary"
-depends = ["ts", "sqlite-header"]
+depends = ["ts", "sqlite-header", "apple"]
 # git describe fails in a repository with no tags, and an empty -X value sets
 # Version to the empty string rather than leaving the source default.
 run = 'go build -ldflags "-X main.Version=$(git describe --tags --dirty 2>/dev/null || echo dev)" -o brightlantern ./cmd/brightlantern'
@@ -89,7 +105,8 @@ run = "./brightlantern index"
 
 [tasks."dev:go"]
 description = "Run the server, rebuilding on change"
-run = "wgo run ./cmd/brightlantern serve --dev --titles-via=claude"
+depends = ["apple"]
+run = "wgo run ./cmd/brightlantern serve --dev"
 
 [tasks."dev:ts"]
 description = "Compile TypeScript on change"
@@ -124,10 +141,10 @@ description = "Stage the extension and model for the release archive"
 # setup is idempotent and does the hard part (building the dylib from the
 # landrix fork, downloading the model); this only copies its output somewhere
 # .goreleaser.yaml can name relatively.
-depends = ["setup"]
+depends = ["setup", "apple"]
 run = [
   "mkdir -p build",
-  'cp "$BRIGHTLANTERN_DATA_DIR/lembed0.dylib" "$BRIGHTLANTERN_DATA_DIR/all-MiniLM-L6-v2.Q8_0.gguf" build/',
+  'cp "$BRIGHTLANTERN_DATA_DIR/lembed0.dylib" "$BRIGHTLANTERN_DATA_DIR/all-MiniLM-L6-v2.Q8_0.gguf" "$BRIGHTLANTERN_DATA_DIR/brightlantern-apple" build/',
 ]
 
 [tasks.release]

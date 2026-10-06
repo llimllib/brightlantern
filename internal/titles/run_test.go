@@ -2,6 +2,7 @@ package titles
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -321,5 +322,36 @@ func (b *blocking) Summarize(ctx context.Context, slice string) (string, error) 
 		return "", ctx.Err()
 	case <-b.release:
 		return "title", nil
+	}
+}
+
+// A refusal is an answer, not a failure. The watcher runs a pass after every
+// change, so a session the model will not title must not be sent to it again
+// until the session itself changes -- while a failure, which might be
+// transient, still must be.
+func TestRunDoesNotRetryDeclinedSessions(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		err       error
+		wantCalls int32
+	}{
+		{"declined", fmt.Errorf("%w: guardrailViolation", ErrDeclined), 1},
+		{"failed", errors.New("rateLimited"), 2},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			db, _ := indexed(t, map[string][]string{"s1": {userMsg("alpha question")}})
+			f := &fake{err: tc.err}
+			for range 2 {
+				if _, err := Run(context.Background(), db, Options{Summarizer: f}); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if n := f.calls.Load(); n != tc.wantCalls {
+				t.Errorf("summarizer calls over two passes = %d, want %d", n, tc.wantCalls)
+			}
+			if got := titleOf(t, db, "s1"); got != "" {
+				t.Errorf("title = %q, want none", got)
+			}
+		})
 	}
 }

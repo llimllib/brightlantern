@@ -76,6 +76,11 @@ archives:
       - src: build/all-MiniLM-L6-v2.Q8_0.gguf
         dst: .
         strip_parent: true
+      # The on-device titles helper, found the same way. Built by swiftc on
+      # the runner, which needs Command Line Tools and nothing more.
+      - src: build/brightlantern-apple
+        dst: .
+        strip_parent: true
 
 changelog:
   sort: asc

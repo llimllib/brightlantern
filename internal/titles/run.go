@@ -16,6 +16,15 @@ import (
 // when it does, the client backs off rather than the pass failing.
 const DefaultConcurrency = 8
 
+// ErrDeclined is wrapped by a Summarizer whose model refused this input and
+// would refuse it again.
+//
+// It is the difference between a failure, which records nothing so the next
+// run retries, and an answer. Without it a session the on-device model's
+// guardrails will not touch is sent to it again on every pass -- and the
+// watcher runs a pass after every change.
+var ErrDeclined = errors.New("the model declined to title this session")
+
 // Progress reports how a pass is going, on the same terms as index.Progress.
 type Progress struct {
 	Total   int // sessions that might need a title
@@ -23,7 +32,11 @@ type Progress struct {
 	Titled  int // summaries written
 	Cached  int // opening prose unchanged, so no call was made
 	Skipped int // nothing to summarize
-	Failed  int
+	// Declined counts sessions the model will not title -- a guardrail, too
+	// long, a language it does not handle. Not failures: asking again gets the
+	// same answer, so they are marked checked and keep their opening message.
+	Declined int
+	Failed   int
 
 	// FirstErr is why the first failure failed. Individual failures are not
 	// fatal, so without this a run reports a count and no reason, and the
@@ -125,6 +138,11 @@ func Run(ctx context.Context, db *index.DB, opts Options) (Progress, error) {
 		p.Done++
 		var werr error
 		switch {
+		case errors.Is(r.err, ErrDeclined):
+			// Settled until the session changes, like one with no prose. The
+			// row keeps its fallback; title_key stays as it was.
+			p.Declined++
+			werr = db.MarkTitleChecked(ctx, r.id, r.nMsgs)
 		case r.err != nil:
 			// Leave title and title_key alone: the row keeps its fallback and
 			// the next run tries again. Nothing is recorded that would make
