@@ -2,6 +2,7 @@ package web
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -926,5 +927,27 @@ func TestTitleMatchDoesNotScrollAnywhere(t *testing.T) {
 	}
 	if n := doc.Find(".turn.is-match").Length(); n != 0 {
 		t.Errorf("marked turns = %d, want none: no message matched", n)
+	}
+}
+
+// Other processes read this to decide whether to defer to a running server,
+// so the fields they compare on are the contract.
+func TestInstanceSaysWhatIsServing(t *testing.T) {
+	f := newFixture(t, map[string][]string{"aaa": {userMsg("q")}})
+	f.srv.opts.Version = "v1.2.3"
+	f.srv.opts.IndexPath = f.dbPath
+
+	rec := httptest.NewRecorder()
+	f.handler.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, InstancePath, nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d", rec.Code)
+	}
+	var in Instance
+	if err := json.Unmarshal(rec.Body.Bytes(), &in); err != nil {
+		t.Fatal(err)
+	}
+	want := Instance{Name: InstanceName, Version: "v1.2.3", Index: f.dbPath, Writing: false}
+	if in != want {
+		t.Errorf("instance = %+v, want %+v", in, want)
 	}
 }

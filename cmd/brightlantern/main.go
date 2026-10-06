@@ -43,6 +43,7 @@ flags:
   --dir PATH     session directory, repeatable (default: from the
                  settings file, or detected)
   --full         reindex everything rather than what changed
+  --force        index even while a running server keeps the index current
   --lexical      skip semantic indexing, even if the model is installed
   --addr ADDR    serve on this address (default 127.0.0.1:8080)
   --dev          reload templates and static files from disk per request
@@ -85,6 +86,7 @@ func main() {
 	dev := fs.Bool("dev", false, "reload templates and static files from disk")
 	openBrowser := fs.Bool("open", false, "open a browser once listening")
 	noWatch := fs.Bool("no-watch", false, "do not index in the background")
+	force := fs.Bool("force", false, "index even while a server is keeping the index current")
 	_ = fs.Bool("no-titles", false, "do not generate session titles") // read via givenFlags
 	// Titling the whole corpus costs real money. A limit makes a trial run
 	// possible -- newest sessions first, so it titles what is worth looking at
@@ -106,6 +108,8 @@ func main() {
 		_ = fs.Parse(args)
 		if s, serr := resolve(givenFlags(fs), dirs, *dbPath, *addr, *titleVia); serr != nil {
 			err = serr
+		} else if cerr := checkNoWriter(s.addr, s.dbPath); cerr != nil && !*force {
+			err = cerr
 		} else {
 			err = runIndex(s.dbPath, s.dirs, *full, *lexical, *titleLimit, s.titles)
 		}

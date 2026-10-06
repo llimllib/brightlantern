@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"net"
 	"net/http"
 	"os"
 	"os/exec"
@@ -23,6 +22,17 @@ import (
 )
 
 func runServe(dbPath, addr string, dirs []string, dev, launchBrowser, noWatch bool, titlesVia string) error {
+	// First, before anything that writes or loads: see listen.
+	ln, err := listen(addr)
+	if err != nil {
+		return err
+	}
+	defer ln.Close()
+
+	// Absolute, because it is reported at web.InstancePath and compared
+	// against paths given to other processes from other directories.
+	dbPath = canonical(dbPath)
+
 	if err := bootstrapIndex(dbPath); err != nil {
 		return err
 	}
@@ -64,17 +74,18 @@ func runServe(dbPath, addr string, dirs []string, dev, launchBrowser, noWatch bo
 		defer closeLive()
 	}
 
-	srv, err := web.New(db, buildEngine(db, driver), web.Options{Dev: dev, Indexer: live})
+	srv, err := web.New(db, buildEngine(db, driver), web.Options{
+		Dev:       dev,
+		Indexer:   live,
+		Version:   Version,
+		IndexPath: dbPath,
+	})
 	if err != nil {
 		return err
 	}
 
-	// Listen before announcing, so the printed URL is always one that works
-	// and --open cannot race the socket.
-	ln, err := net.Listen("tcp", addr)
-	if err != nil {
-		return err
-	}
+	// Announced only now, though the socket has been bound since the top, so
+	// the printed URL is one that answers and --open cannot race it.
 	url := "http://" + ln.Addr().String()
 	// The subcommands are not visible on a bare `brightlantern`, which is now the
 	// usual way to run it. One line restores them without anyone reading usage

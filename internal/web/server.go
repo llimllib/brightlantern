@@ -43,6 +43,10 @@ type Options struct {
 
 	// Indexer, when set, powers the header's indexing indicator.
 	Indexer StatusSource
+
+	// Version and IndexPath are reported at InstancePath.
+	Version   string
+	IndexPath string
 }
 
 // Server holds everything a request needs.
@@ -143,6 +147,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /{$}", s.handleIndex)
 	mux.HandleFunc("GET /search", s.handleSearch)
 	mux.HandleFunc("GET /status", s.handleStatus)
+	mux.HandleFunc("GET "+InstancePath, s.handleInstance)
 	mux.HandleFunc("GET /sessions/{id}", s.handleSession)
 	mux.HandleFunc("GET /sessions/{id}/tool/{msg}/{blk}", s.handleTool)
 	mux.HandleFunc("GET /static/chroma.css", s.handleChromaCSS)

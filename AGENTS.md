@@ -421,6 +421,17 @@ case above.
 
 Events are coalesced after a 2s lull, because pi writes once per message.
 
+**`serve` binds its port before anything else.** One writer per index holds
+across processes only because a second `serve` cannot get that far: it used to
+open a writer, run a catch-up build and start titling before discovering the
+port was taken, and with a LaunchAgent running one invisibly that is the
+ordinary case. On a taken port it asks `/api/instance` who is there, to say
+"already running" rather than "address in use". `index` asks the same and
+refuses when a server is *writing the same database* -- comparing paths, so a
+daemon is no reason to refuse `--db` elsewhere -- because two titles passes pay
+twice for the same sessions. `--force` overrides. `merge` does not check: it
+does not title, and lock contention is all it risks.
+
 A new project directory gets a watch **and a sweep of what is already in it**.
 Creating the directory and writing the first session into it are two operations
 milliseconds apart, so the session that caused the directory to appear is
