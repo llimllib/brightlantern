@@ -25,12 +25,42 @@ type SessionResult struct {
 	Ranks     map[string]int // per-ranker position of BestChunk
 }
 
-// SearchSessions runs a query and returns results grouped by session.
+// BreadthDecay is how much each further matching chunk counts relative to
+// the one before it, in a session's score. See sessionScore.
+const BreadthDecay = 0.5
+
+// sessionScore rolls a session's chunk scores, best first, up into one: the
+// best chunk, plus the second at half weight, the third at a quarter, and so
+// on.
 //
-// A session's score is the best score among its chunks rather than the sum: a
-// session that discusses the topic once, well, should outrank one that
-// mentions it three times in passing. Chunk count is reported separately and
-// breaks ties.
+// Best-alone was the original rule, on the grounds that a session discussing
+// something once, well, should beat one mentioning it three times in passing.
+// On the real corpus it put the sessions with fifteen substantial passages
+// about a subject below sessions with one: breadth is evidence of aboutness,
+// and best-alone counted it for nothing.
+//
+// The decay keeps what was right about best-alone. Each chunk counts by its
+// own score, so a session with many weak matches gains little, and the total
+// can never exceed twice the best chunk however many there are. RRF scores are
+// flat -- rank 60 is worth half of rank 1 -- so in practice a session whose
+// best chunk is around 60th and that has many more behind it can pass a
+// single chunk at rank 1. That is deliberate: dozens of matches in the top
+// hundred are not passing mentions. A bonus on
+// the *count* of chunks was measured and rejected for exactly that: with the
+// words of a query OR-ed together, a session saying "limit" eight times
+// climbed from 32nd to 8th on "rate limit". 0.7 did the same; 0.3 barely
+// moved anything. The comparison is in #42.
+func sessionScore(scores []float64) float64 {
+	total, w := 0.0, 1.0
+	for _, s := range scores {
+		total += w * s
+		w *= BreadthDecay
+	}
+	return total
+}
+
+// SearchSessions runs a query and returns results grouped by session, scored
+// by sessionScore. Chunk count is reported separately and breaks ties.
 func (e *Engine) SearchSessions(ctx context.Context, db *sql.DB, q Query, limit int) ([]SessionResult, error) {
 	if db == nil {
 		return nil, nil
@@ -70,6 +100,7 @@ func (e *Engine) SearchSessions(ctx context.Context, db *sql.DB, q Query, limit 
 	defer rows.Close()
 
 	bySession := map[string]*SessionResult{}
+	scores := map[string][]float64{}
 	for rows.Next() {
 		var chunkID ChunkID
 		var body string
@@ -90,7 +121,10 @@ func (e *Engine) SearchSessions(ctx context.Context, db *sql.DB, q Query, limit 
 			bySession[summary.ID] = cur
 		}
 		cur.NumChunks++
-		if sc := byChunk[chunkID]; sc.Score > cur.Score {
+		sc := byChunk[chunkID]
+		scores[summary.ID] = append(scores[summary.ID], sc.Score)
+		// Score is the best chunk's until the loop ends, then the session's.
+		if sc.Score > cur.Score {
 			cur.Score = sc.Score
 			cur.BestChunk = chunkID
 			cur.BestText = body
@@ -102,7 +136,10 @@ func (e *Engine) SearchSessions(ctx context.Context, db *sql.DB, q Query, limit 
 	}
 
 	out := make([]SessionResult, 0, len(bySession))
-	for _, r := range bySession {
+	for id, r := range bySession {
+		s := scores[id]
+		sort.Sort(sort.Reverse(sort.Float64Slice(s)))
+		r.Score = sessionScore(s)
 		out = append(out, *r)
 	}
 	sort.Slice(out, func(i, j int) bool {
