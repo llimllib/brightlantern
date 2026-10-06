@@ -104,11 +104,11 @@ func TestResolveHonoursAFlagSetToItsDefault(t *testing.T) {
 	installSessions(t, filepath.Join(home, ".pi", "agent", "sessions"))
 	writeConfig(t, config.Config{Dirs: []string{"/x"}, Addr: "0.0.0.0:9999", Index: "/from/config.db"})
 
-	s, err := resolve(map[string]bool{"addr": true, "db": true}, nil, "flag.db", "127.0.0.1:8080", "")
+	s, err := resolve(map[string]bool{"addr": true, "db": true}, nil, "flag.db", config.DefaultAddr, "")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if s.addr != "127.0.0.1:8080" {
+	if s.addr != config.DefaultAddr {
 		t.Errorf("addr = %q, want the flag's value", s.addr)
 	}
 	if s.dbPath != "flag.db" {
@@ -122,7 +122,7 @@ func TestResolveTakesAddrAndIndexFromTheFile(t *testing.T) {
 	installSessions(t, filepath.Join(home, ".pi", "agent", "sessions"))
 	writeConfig(t, config.Config{Dirs: []string{"/x"}, Addr: "0.0.0.0:9999", Index: "/from/config.db"})
 
-	s, err := resolve(map[string]bool{}, nil, "flag.db", "127.0.0.1:8080", "")
+	s, err := resolve(map[string]bool{}, nil, "flag.db", config.DefaultAddr, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -186,6 +186,33 @@ func TestResolveWritesTheFileOnFirstRun(t *testing.T) {
 	// been getting titles all along.
 	if cfg.Titles != config.TitlesAPI {
 		t.Errorf("titles = %q, want %q", cfg.Titles, config.TitlesAPI)
+	}
+	// Written rather than left absent: other processes read the file to find
+	// the server.
+	if cfg.Addr != config.DefaultAddr {
+		t.Errorf("addr = %q, want %q", cfg.Addr, config.DefaultAddr)
+	}
+}
+
+// A first run given --addr writes the default, not the flag: the flag answers
+// this run, and writing it down would make a one-off permanent.
+func TestResolveFirstRunWritesTheDefaultAddrNotTheFlag(t *testing.T) {
+	home := sandbox(t)
+	installSessions(t, filepath.Join(home, ".pi", "agent", "sessions"))
+
+	s, err := resolve(map[string]bool{"addr": true}, nil, "db", "127.0.0.1:9999", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s.addr != "127.0.0.1:9999" {
+		t.Errorf("this run's addr = %q, want the flag's", s.addr)
+	}
+	cfg, _, err := config.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Addr != config.DefaultAddr {
+		t.Errorf("written addr = %q, want %q", cfg.Addr, config.DefaultAddr)
 	}
 }
 
@@ -274,7 +301,7 @@ func TestResolveMovesTheDefaultIndex(t *testing.T) {
 	writeConfig(t, config.Config{Dirs: []string{installSessions(t, filepath.Join(home, "s"))}})
 	legacy := placeLegacyIndex(t)
 
-	s, err := resolve(map[string]bool{}, nil, index.DefaultPath(), "127.0.0.1:8080", "")
+	s, err := resolve(map[string]bool{}, nil, index.DefaultPath(), config.DefaultAddr, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -298,7 +325,7 @@ func TestResolveLeavesAConfiguredIndexAlone(t *testing.T) {
 	legacy := placeLegacyIndex(t)
 	writeConfig(t, config.Config{Dirs: []string{installSessions(t, filepath.Join(home, "s"))}, Index: legacy})
 
-	s, err := resolve(map[string]bool{}, nil, index.DefaultPath(), "127.0.0.1:8080", "")
+	s, err := resolve(map[string]bool{}, nil, index.DefaultPath(), config.DefaultAddr, "")
 	if err != nil {
 		t.Fatal(err)
 	}

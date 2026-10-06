@@ -18,7 +18,7 @@ brew install llimllib/tap/brightlantern
 brightlantern
 ```
 
-That serves on <http://127.0.0.1:8080>, building the index behind the page if
+That serves on <http://127.0.0.1:5268>, building the index behind the page if
 there is not one yet. `brightlantern help` lists the other commands.
 
 macOS on Apple Silicon. The cask carries the embedding model and the search
@@ -83,7 +83,7 @@ The session id opens in the browser at `/sessions/<id>`.
 ```bash
 mise run setup    # embedding model + sqlite-lembed, once
 mise run index    # build the search index
-mise run dev      # http://localhost:8080
+mise run dev      # http://localhost:5268
 mise run check    # vet, lint, typecheck, gofmt, test
 ```
 

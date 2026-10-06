@@ -45,7 +45,7 @@ flags:
   --full         reindex everything rather than what changed
   --force        index even while a running server keeps the index current
   --lexical      skip semantic indexing, even if the model is installed
-  --addr ADDR    serve on this address (default 127.0.0.1:8080)
+  --addr ADDR    serve on this address (default 127.0.0.1:5268)
   --dev          reload templates and static files from disk per request
   --open         open a browser once the server is listening
   --no-watch     do not index in the background while serving
@@ -82,7 +82,7 @@ func main() {
 	fs.Var(&dirs, "dir", "session directory (repeatable)")
 	full := fs.Bool("full", false, "reindex everything")
 	lexical := fs.Bool("lexical", false, "skip semantic indexing")
-	addr := fs.String("addr", "127.0.0.1:8080", "listen address")
+	addr := fs.String("addr", config.DefaultAddr, "listen address")
 	dev := fs.Bool("dev", false, "reload templates and static files from disk")
 	openBrowser := fs.Bool("open", false, "open a browser once listening")
 	noWatch := fs.Bool("no-watch", false, "do not index in the background")
@@ -739,6 +739,13 @@ func resolve(given map[string]bool, flagged dirList, dbPath, addr, titleVia stri
 			// comments in the file are what tell a Claude Code user that
 			// "claude" is the setting for them.
 			cfg.Titles = config.TitlesAPI
+		}
+		if cfg.Addr == "" {
+			// Written down rather than left to default, because other processes
+			// read this file to find the server, and an absent value means
+			// "work it out" -- which a second client cannot do. The default
+			// rather than a one-off --addr, which answers this run only.
+			cfg.Addr = config.DefaultAddr
 		}
 		if err := cfg.Save(); err != nil {
 			// Not fatal: brightlantern works perfectly well without being able to

@@ -26,6 +26,15 @@ const (
 	TitlesClaude = "claude"
 )
 
+// DefaultAddr is where the web interface listens when nothing says otherwise.
+//
+// 5268 is LANT on a phone keypad. Unassigned by IANA, clear of the ports dev
+// servers crowd onto (3000, 5000, 5173, 8000-8080), and below macOS's ephemeral
+// range, which starts at 49152: a port in that range is occasionally handed to
+// some other process's outbound connection, and a daemon that cannot bind
+// would fail to start for no visible reason.
+const DefaultAddr = "127.0.0.1:5268"
+
 // Config is the settings file. Every field is optional; an absent one means
 // "work it out", which is what a first run does for all of them.
 type Config struct {
@@ -117,7 +126,8 @@ func (c Config) SaveTo(path string) error {
 	fmt.Fprintf(&b, "titles = %s\n\n", quote(c.Titles))
 
 	if c.Addr != "" {
-		b.WriteString("# Address the web interface listens on.\n")
+		b.WriteString("# Address the web interface listens on, and where everything else --\n")
+		b.WriteString("# a second brightlantern, the app -- looks for it.\n")
 		fmt.Fprintf(&b, "addr = %s\n\n", quote(c.Addr))
 	}
 	if c.Index != "" {
