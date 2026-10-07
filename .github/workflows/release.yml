@@ -30,7 +30,7 @@ jobs:
       # GOFLAGS, and the CGO_CFLAGS that points cgo at the staged sqlite3.h.
       # .goreleaser.yaml refuses to build without the latter rather than
       # compiling against whichever header the runner happens to ship.
-      - uses: jdx/mise-action@v4
+      - uses: jdx/mise-action@v5
         with:
           experimental: true
 

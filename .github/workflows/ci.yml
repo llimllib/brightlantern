@@ -33,7 +33,7 @@ jobs:
       # lives. Without that tag the schema fails at runtime with "no such
       # module: fts5", so CI has to inherit it the same way a developer does
       # rather than restating it here.
-      - uses: jdx/mise-action@v4
+      - uses: jdx/mise-action@v5
         with:
           # mise.toml installs tools through the go: and npm: backends, which
           # mise gates behind this.
