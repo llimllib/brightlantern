@@ -34,14 +34,28 @@ jobs:
         with:
           experimental: true
 
+      # Asked of go rather than written down. The paths this used to name,
+      # ~/Library/Caches/go-build and ~/go/pkg/mod, are Go's defaults and where
+      # they are on a laptop, but the cache saved was 56MB with no modules in
+      # it: every run downloaded every dependency, twice over, since lint and
+      # test start together.
+      - name: Locate Go's caches
+        id: go-env
+        run: |
+          echo "build=$(go env GOCACHE)" >> "$GITHUB_OUTPUT"
+          echo "modules=$(go env GOMODCACHE)" >> "$GITHUB_OUTPUT"
+          echo "::notice title=Go caches::GOCACHE=$(go env GOCACHE) GOMODCACHE=$(go env GOMODCACHE)"
+
       - name: Cache Go build
         uses: actions/cache@v6
         with:
           path: |
-            ~/Library/Caches/go-build
-            ~/go/pkg/mod
-          key: go-${{ runner.os }}-${{ hashFiles('go.sum') }}
-          restore-keys: go-${{ runner.os }}-
+            ${{ steps.go-env.outputs.build }}
+            ${{ steps.go-env.outputs.modules }}
+          # v2: the entries under the old key hold the build cache alone, and
+          # an exact hit is never saved over.
+          key: go-v2-${{ runner.os }}-${{ hashFiles('go.sum') }}
+          restore-keys: go-v2-${{ runner.os }}-
 
       # The release archive ships the sqlite-lembed extension and the embedding
       # model beside the binary, and `mise run release-assets` builds the first
