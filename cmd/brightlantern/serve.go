@@ -9,7 +9,6 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
-	"runtime"
 	"sync"
 	"syscall"
 	"time"
@@ -343,14 +342,5 @@ func buildEngine(db *index.DB, driver string) *search.Engine {
 }
 
 func open(url string) {
-	var cmd string
-	switch runtime.GOOS {
-	case "darwin":
-		cmd = "open"
-	case "windows":
-		cmd = "explorer"
-	default:
-		cmd = "xdg-open"
-	}
-	_ = exec.Command(cmd, url).Start()
+	_ = exec.Command("open", url).Start()
 }

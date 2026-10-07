@@ -616,9 +616,8 @@ instructions and prompt as JSON on stdin, so the system prompt has one
 definition. `blacktop/go-foundationmodels` does not build from `go get`: it
 links a `libFMShim.a` that `go generate` makes and the read-only module cache
 cannot hold. The helper ships beside the binary and `embed.Beside` finds it
-the way it finds the dylib; `mise run apple` is a no-op off macOS, so CI's
-Linux build is unaffected, and the release runner is pinned to `macos-26` for
-the SDK.
+the way it finds the dylib, and CI and the release runner are pinned to
+`macos-26` for the SDK.
 
 **A refusal is an answer, not a failure.** The on-device model has guardrails,
 and they are not subtle: the one session of 200 it declined was about speeding

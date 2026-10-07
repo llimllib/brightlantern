@@ -20,11 +20,13 @@ DATA_DIR="${BRIGHTLANTERN_DATA_DIR:-$HOME/.local/share/brightlantern}"
 MODEL="$DATA_DIR/all-MiniLM-L6-v2.Q8_0.gguf"
 SRC="$DATA_DIR/src/sqlite-lembed"
 
-case "$(uname -s)" in
-  Darwin) EXT_FILE=lembed0.dylib ;;
-  *)      EXT_FILE=lembed0.so ;;
-esac
+EXT_FILE=lembed0.dylib
 EXT="$DATA_DIR/$EXT_FILE"
+
+if [ "$(uname -s)" != Darwin ]; then
+  echo "setup: Bright Lantern runs on macOS only" >&2
+  exit 1
+fi
 
 MODEL_URL="https://huggingface.co/leliuga/all-MiniLM-L6-v2-GGUF/resolve/main/all-MiniLM-L6-v2.Q8_0.gguf?download=true"
 LEMBED_REPO="https://github.com/landrix/sqlite-lembed"
@@ -45,10 +47,8 @@ if [ ! -f "$EXT" ]; then
     git submodule update --init --depth 1 vendor/llama.cpp
     # Built statically so the result is one self-contained file: a shared build
     # leaves lembed0.dylib at 69KB with @rpath deps on six sibling libggml dylibs.
-    CMAKE_ARGS=(-B build -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=OFF)
-    if [ "$(uname -s)" = "Darwin" ]; then
-      CMAKE_ARGS+=(-DGGML_METAL=ON -DGGML_METAL_EMBED_LIBRARY=ON)
-    fi
+    CMAKE_ARGS=(-B build -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=OFF
+      -DGGML_METAL=ON -DGGML_METAL_EMBED_LIBRARY=ON)
     cmake "${CMAKE_ARGS[@]}"
     cmake --build build -j8
   )

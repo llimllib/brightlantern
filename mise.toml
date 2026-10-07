@@ -48,12 +48,10 @@ description = "Build the on-device titles helper into the data directory"
 # Tools SDK, so no Xcode. Into the data directory rather than beside
 # ./brightlantern because that is where embed.Beside looks for a binary that
 # moves -- go run's lives in a temp directory -- the same place setup puts the
-# extension. A no-op off macOS, so CI's Linux build still works; there is
-# nothing to build it against there.
+# extension.
 sources = ["cmd/brightlantern-apple/*.swift"]
 outputs = ["{{env.BRIGHTLANTERN_DATA_DIR}}/brightlantern-apple"]
 run = '''
-if [ "$(uname)" != Darwin ]; then echo "apple: not macOS, skipping"; exit 0; fi
 command -v swiftc >/dev/null || { echo "apple: no swiftc; install Command Line Tools: xcode-select --install" >&2; exit 1; }
 mkdir -p "$BRIGHTLANTERN_DATA_DIR"
 swiftc -O -target arm64-apple-macos26.0 -o "$BRIGHTLANTERN_DATA_DIR/brightlantern-apple" cmd/brightlantern-apple/main.swift
@@ -68,7 +66,7 @@ description = "Build build/Bright Lantern.app"
 # Tools would stay the real dependency. See
 # docs/plans/2026-10-06-wkwebview-shell-design.md.
 #
-# Not a dependency of check: CI is Linux, and this does nothing there.
+# Not a dependency of check, which stays the quick loop; CI runs it after.
 #
 # The daemon rides inside, so that SMAppService can register an agent that is
 # part of the bundle and an upgrade replaces both at once (#86). Everything in
@@ -86,7 +84,6 @@ sources = [
 ]
 outputs = ["build/Bright Lantern.app/Contents/MacOS/brightlantern-app", "build/Bright Lantern.app/Contents/MacOS/brightlantern", "build/Bright Lantern.app/Contents/Info.plist"]
 run = '''
-if [ "$(uname)" != Darwin ]; then echo "app: not macOS, skipping"; exit 0; fi
 command -v swiftc >/dev/null || { echo "app: no swiftc; install Command Line Tools: xcode-select --install" >&2; exit 1; }
 plutil -lint -s cmd/brightlantern-app/*.plist
 contents="build/Bright Lantern.app/Contents"
@@ -125,7 +122,6 @@ codesign --verify --strict --deep "build/Bright Lantern.app"
 [tasks.app-test]
 description = "Test the app's logic that needs no window"
 run = '''
-if [ "$(uname)" != Darwin ]; then echo "app-test: not macOS, skipping"; exit 0; fi
 command -v swiftc >/dev/null || { echo "app-test: no swiftc; install Command Line Tools: xcode-select --install" >&2; exit 1; }
 mkdir -p build
 swiftc -target arm64-apple-macos26.0 -o build/app-test cmd/brightlantern-app/address.swift cmd/brightlantern-app/startup.swift cmd/brightlantern-app/agent.swift cmd/brightlantern-app/test/main.swift

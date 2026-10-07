@@ -11,7 +11,7 @@ import (
 // never matter to path resolution, only their existence.
 func install(t *testing.T, dir string) {
 	t.Helper()
-	for _, name := range []string{extensionFile(), ModelFile} {
+	for _, name := range []string{ExtensionFile, ModelFile} {
 		if err := os.WriteFile(filepath.Join(dir, name), nil, 0o644); err != nil {
 			t.Fatal(err)
 		}
@@ -24,7 +24,7 @@ func TestDefaultPathsPrefersAnInstallThatExists(t *testing.T) {
 	t.Setenv("BRIGHTLANTERN_DATA_DIR", dir)
 
 	p := DefaultPaths()
-	if p.Extension != filepath.Join(dir, extensionFile()) {
+	if p.Extension != filepath.Join(dir, ExtensionFile) {
 		t.Errorf("extension = %q, want it under %q", p.Extension, dir)
 	}
 	if err := p.Check(); err != nil {
@@ -106,7 +106,7 @@ func TestCandidatesPairABundlesExtensionWithItsResources(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	for _, f := range []string{filepath.Join(macos, extensionFile()), filepath.Join(resources, ModelFile)} {
+	for _, f := range []string{filepath.Join(macos, ExtensionFile), filepath.Join(resources, ModelFile)} {
 		if err := os.WriteFile(f, nil, 0o644); err != nil {
 			t.Fatal(err)
 		}
@@ -123,7 +123,7 @@ func TestCandidatesPairABundlesExtensionWithItsResources(t *testing.T) {
 		}
 	}
 	want := Paths{
-		Extension: filepath.Join(macos, extensionFile()),
+		Extension: filepath.Join(macos, ExtensionFile),
 		Model:     filepath.Join(resources, ModelFile),
 	}
 	if found == nil || *found != want {

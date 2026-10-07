@@ -150,9 +150,13 @@ func registerError(modelPath string, err error) error {
 
 // Paths locates the native extension and model file.
 type Paths struct {
-	Extension string // lembed0.dylib (or .so)
+	Extension string // lembed0.dylib
 	Model     string // *.gguf
 }
+
+// ExtensionFile is the sqlite-lembed library's filename, built by
+// mise-tasks/setup from the landrix fork. macOS only (#91).
+const ExtensionFile = "lembed0.dylib"
 
 // ModelFile is the embedding model's filename, shared by the install layout
 // and by mise-tasks/setup, which downloads it.
@@ -197,7 +201,7 @@ func candidates(dirs []string) []Paths {
 		ps = append(ps, pathsIn(dir))
 		if res, ok := bundleResources(dir); ok {
 			ps = append(ps, Paths{
-				Extension: filepath.Join(dir, extensionFile()),
+				Extension: filepath.Join(dir, ExtensionFile),
 				Model:     filepath.Join(res, ModelFile),
 			})
 		}
@@ -216,7 +220,7 @@ func bundleResources(dir string) (string, bool) {
 
 func pathsIn(dir string) Paths {
 	return Paths{
-		Extension: filepath.Join(dir, extensionFile()),
+		Extension: filepath.Join(dir, ExtensionFile),
 		Model:     filepath.Join(dir, ModelFile),
 	}
 }
