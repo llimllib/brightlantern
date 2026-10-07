@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- The LaunchAgent's label too, deliberately, so that SMAppService
+	     registers the same job (#74). Gatekeeper and privacy permissions
+	     attach to it: never change it. -->
+	<key>CFBundleIdentifier</key>
+	<string>org.billmill.brightlantern</string>
+	<key>CFBundleName</key>
+	<string>Bright Lantern</string>
+	<key>CFBundleDisplayName</key>
+	<string>Bright Lantern</string>
+	<key>CFBundleExecutable</key>
+	<string>brightlantern-app</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>CFBundleInfoDictionaryVersion</key>
+	<string>6.0</string>
+	<key>LSMinimumSystemVersion</key>
+	<string>26.0</string>
+	<key>NSPrincipalClass</key>
+	<string>NSApplication</string>
+	<key>NSHighResolutionCapable</key>
+	<true/>
+	<!-- No NSAppTransportSecurity, on purpose (#72). The daemon speaks plain
+	     HTTP, and ATS was expected to refuse it; measured on macOS 27, it does
+	     not. Without any exception the page renders from 127.0.0.1, and both
+	     127.0.0.1 and localhost reach the network rather than being refused
+	     with -1022. NSAllowsLocalNetworking was tried and changed nothing.
+	     main.swift still names an ATS refusal if one ever happens. -->
+</dict>
+</plist>

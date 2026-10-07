@@ -9,9 +9,10 @@ The short version: there is no renderer-side application to host, the thing
 that genuinely needs hosting is a cgo binary neither of them helps with, and
 `WKWebView` ships with macOS.
 
-This covers #71 and #72 together. #72 is four lines of the `Info.plist` that
-#71 must author anyway, and without it the webview loads nothing -- so a strict
-#71 would ship an app that provably does not work.
+This covers #71 and #72 together. #72 was going to be four lines of the
+`Info.plist` that #71 must author anyway, and on its premise the webview would
+load nothing without them. Measured, the premise was false and the four lines
+are not there; §3 has the numbers.
 
 ## 1. The bundle, built with swiftc (#71)
 
@@ -78,22 +79,24 @@ may bind somewhere other than what is configured. Here that case is thin --
 taken, so there is at most one daemon per address -- and it adds a staleness
 problem, since a daemon that crashes leaves the file behind claiming to be up.
 
-## 3. The ATS exception (#72)
+## 3. No ATS exception after all (#72)
 
-App Transport Security blocks plain HTTP, which is what the daemon speaks.
-`NSAllowsLocalNetworking` under `NSAppTransportSecurity` is the narrow key:
-it permits insecure loads to local-network hosts while leaving ATS in force
-for the internet, unlike `NSAllowsArbitraryLoads`, which turns it off
-wholesale.
+The plan was `NSAllowsLocalNetworking`, on #72's premise that App Transport
+Security refuses the daemon's plain HTTP. Measured on macOS 27 with a copy of
+the bundle that had no `NSAppTransportSecurity` at all, the premise is false:
 
-**To verify empirically rather than assume:** the default address is the IP
-literal `127.0.0.1`, not the name `localhost`, and Apple documents
-`NSAllowsLocalNetworking` in terms of unqualified and `.local` names and
-local-network address blocks. Whether it covers a loopback literal is the one
-thing here worth testing before trusting, because the failure mode is a blank
-window. If it does not, an `NSExceptionDomains` entry for `127.0.0.1` with
-`NSExceptionAllowsInsecureHTTPLoads` goes in alongside it. The answer gets
-written into the commit body either way.
+| without any exception | result |
+| --- | --- |
+| `http://127.0.0.1:5269/`, daemon up | page renders |
+| `http://127.0.0.1:5392/`, nothing listening | `-1004`, cannot connect |
+| `http://localhost:5392/`, nothing listening | `-1004`, cannot connect |
+
+An ATS refusal is `-1022` and happens before any connection is attempted, so
+`-1004` means the load got past ATS. With the key, `localhost` gave the same
+`-1004`: it changes nothing for any address this app loads. The `Info.plist`
+carries a comment saying so instead, so the key is not added back on the
+strength of #72's title. The delegate still names an ATS refusal (§5), so if
+a later macOS starts enforcing one, the window says why.
 
 ## 4. The window remembers itself (#71)
 
@@ -110,12 +113,13 @@ here, and no placeholder is built that #75 would only delete.
 
 What #71 does need is attribution. #75 observes that an ATS misconfiguration
 and a dead daemon currently produce the same blank window -- and since #72 is
-in scope here, "did the exception work" has to be answerable. So
+in scope here, "is ATS refusing this" has to be answerable. So
 `WKNavigationDelegate` is implemented for one purpose: log the `NSError` from
 `didFailProvisionalNavigation`, whose code separates
 `NSURLErrorAppTransportSecurityRequiresSecureConnection` from
 `NSURLErrorCannotConnectToHost`. About ten lines, and it is what makes this
-ticket verifiable rather than merely finished.
+ticket verifiable rather than merely finished -- it is how §3 found out the
+exception was not needed.
 
 ## 6. `mise run app`
 

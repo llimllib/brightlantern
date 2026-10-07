@@ -54,8 +54,46 @@ sources = ["cmd/brightlantern-apple/*.swift"]
 outputs = ["{{env.BRIGHTLANTERN_DATA_DIR}}/brightlantern-apple"]
 run = '''
 if [ "$(uname)" != Darwin ]; then echo "apple: not macOS, skipping"; exit 0; fi
+command -v swiftc >/dev/null || { echo "apple: no swiftc; install Command Line Tools: xcode-select --install" >&2; exit 1; }
 mkdir -p "$BRIGHTLANTERN_DATA_DIR"
 swiftc -O -target arm64-apple-macos26.0 -o "$BRIGHTLANTERN_DATA_DIR/brightlantern-apple" cmd/brightlantern-apple/main.swift
+'''
+
+[tasks.app]
+description = "Build build/Bright Lantern.app"
+# A WKWebView showing the daemon, built with plain swiftc and a hand-written
+# Info.plist: AppKit and WebKit are in the Command Line Tools SDK, so no Xcode
+# project. swift is not in [tools] on purpose -- mise's core:swift is a
+# swift.org toolchain, which does not carry those frameworks, so Command Line
+# Tools would stay the real dependency. See
+# docs/plans/2026-10-06-wkwebview-shell-design.md.
+#
+# Not a dependency of check: CI is Linux, and this does nothing there.
+sources = ["cmd/brightlantern-app/*.swift", "cmd/brightlantern-app/Info.plist"]
+outputs = ["build/Bright Lantern.app/Contents/MacOS/brightlantern-app", "build/Bright Lantern.app/Contents/Info.plist"]
+run = '''
+if [ "$(uname)" != Darwin ]; then echo "app: not macOS, skipping"; exit 0; fi
+command -v swiftc >/dev/null || { echo "app: no swiftc; install Command Line Tools: xcode-select --install" >&2; exit 1; }
+plutil -lint -s cmd/brightlantern-app/Info.plist
+contents="build/Bright Lantern.app/Contents"
+mkdir -p "$contents/MacOS"
+cp cmd/brightlantern-app/Info.plist "$contents/Info.plist"
+swiftc -O -target arm64-apple-macos26.0 -o "$contents/MacOS/brightlantern-app" cmd/brightlantern-app/main.swift cmd/brightlantern-app/address.swift
+# The linker ad-hoc signs the executable alone, under its file name and with
+# Info.plist unbound. Sealing the bundle puts the signature under the bundle
+# identifier, which is what privacy permissions attach to. Ad-hoc only: the
+# Developer ID is for releases (#78).
+codesign --force --sign - "build/Bright Lantern.app"
+'''
+
+[tasks.app-test]
+description = "Test the app's address resolution"
+run = '''
+if [ "$(uname)" != Darwin ]; then echo "app-test: not macOS, skipping"; exit 0; fi
+command -v swiftc >/dev/null || { echo "app-test: no swiftc; install Command Line Tools: xcode-select --install" >&2; exit 1; }
+mkdir -p build
+swiftc -target arm64-apple-macos26.0 -o build/app-test cmd/brightlantern-app/address.swift cmd/brightlantern-app/test/main.swift
+build/app-test
 '''
 
 [tasks.build]
