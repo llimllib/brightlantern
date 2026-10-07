@@ -71,7 +71,11 @@ do {
 let session = LanguageModelSession(instructions: req.instructions)
 // Greedy, because the same transcript should get the same title every time it
 // is asked; nothing here benefits from variety.
-let options = GenerationOptions(samplingMode: .greedy, maximumResponseTokens: req.max_tokens ?? 64)
+//
+// sampling:, not samplingMode:. The SDK 27 rename does not exist in SDK 26,
+// which is what the macos-26 runners build with, and using it broke the
+// v0.0.3 release; SDK 27 accepts the old label with a deprecation warning.
+let options = GenerationOptions(sampling: .greedy, maximumResponseTokens: req.max_tokens ?? 64)
 
 do {
     let response = try await session.respond(to: req.prompt, options: options)
