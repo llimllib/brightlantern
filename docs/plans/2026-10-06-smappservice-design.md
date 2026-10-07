@@ -74,26 +74,37 @@ Either way, the app needs to:
 - treat `.requiresApproval` as #75's third state, with a button that calls
   `openSystemSettingsLoginItems()`
 
-## What only a login session can answer
+## Measured in a login session
 
-The sandbox these notes were written from cannot reach the background task
-service: every status query, including one for agents that are installed
-and running, answered `notFound`. So none of these is known:
+The sandbox these notes were first written from cannot reach the background
+task service: every status query, including for agents installed and
+running, answered `notFound`. So the questions went to a throwaway app under
+`org.billmill.brightlantern-spike`, not the real label -- one copy ad-hoc
+signed and one with the Developer ID, each carrying an agent that runs
+`/bin/sh` outside the bundle and one whose `BundleProgram` is a script
+inside it, both only appending the date to a file. On macOS 27:
 
-1. Does `register()` accept an ad-hoc signature, or is the Developer ID
-   (#85) needed? If the latter, #74 cannot be tested end to end before M15.
-2. Does an agent whose `ProgramArguments` point outside the bundle actually
-   run? Option A depends on it.
-3. Does a `BundleProgram` agent run? Option B depends on it.
-4. Before registering, is status `notRegistered` or `notFound`? The app's
-   check has to treat whichever it is as "not yet".
-5. What does Login Items show: the app's name, the label, or something else?
+| | ad-hoc | Developer ID |
+| --- | --- | --- |
+| `register()` | ok | ok |
+| status after | `enabled` | `enabled` |
+| external agent ran | yes, within 2s | yes, within 2s |
+| bundled agent ran | yes, within 2s | yes, within 2s |
+| status after `unregister()` | `notRegistered` | `notRegistered` |
 
-`build/smappservice-spike/run.sh` answers 1 to 5 under
-`org.billmill.brightlantern-spike`, which is not the real label: two copies
-of a throwaway app, one ad-hoc and one Developer ID, each with an external
-and a bundled agent that only append the date to a file in `/tmp`. Its
-header has the steps. Unregister both copies afterwards.
+- **Ad-hoc is enough to register.** #74 can be built and tested before M15.
+- **Both options run.** Neither is ruled out on technical grounds.
+- **No approval was asked for.** Status went straight to `enabled`. The app
+  must still handle `.requiresApproval` -- someone can switch it off in
+  Login Items -- but it is not the first-run path.
+
+Not measured: what status reads before the first registration (the spike
+registered first), and what Login Items displays. And the one that matters
+most for option A -- whether a registered agent keeps launching after its
+executable is replaced -- needs a test that swaps the program, which this one
+did not.
+
+`build/smappservice-spike/run.sh` is the spike; its header has the steps.
 
 Still open after that, and needing a real cask install rather than a bundle
 in `build/`: whether registration survives the cask's `/Applications`
