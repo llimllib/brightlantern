@@ -176,6 +176,69 @@ func TestServiceUninstallBootsOutItsOwnAgent(t *testing.T) {
 	}
 }
 
+// The app's agent has no plist in ~/Library/LaunchAgents, and status used to
+// call it "not installed" and suggest service install -- the one command that
+// must not be run over it (#89).
+func TestServiceStatusNamesTheAppsAgent(t *testing.T) {
+	stubLaunchctl(t, appAgentPrint+"\tpid = 4242\n")
+	p := testServicePaths(t)
+	var b strings.Builder
+	if err := serviceStatus(&b, p, "127.0.0.1:1"); err != nil {
+		t.Fatal(err)
+	}
+	got := b.String()
+	for _, want := range []string{"by Bright Lantern.app", "Background App Activity", "loaded     yes, spawn", "pid 4242", p.log} {
+		if !strings.Contains(got, want) {
+			t.Errorf("status lacks %q:\n%s", want, got)
+		}
+	}
+	for _, bad := range []string{"not installed", "service install"} {
+		if strings.Contains(got, bad) {
+			t.Errorf("status says %q about the app's agent:\n%s", bad, got)
+		}
+	}
+}
+
+func TestServiceStatusNamesALeftoverPlistBesideTheAppsAgent(t *testing.T) {
+	stubLaunchctl(t, appAgentPrint)
+	p := testServicePaths(t)
+	if err := os.MkdirAll(filepath.Dir(p.plist), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(p.plist, []byte("stray"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	var b strings.Builder
+	_ = serviceStatus(&b, p, "127.0.0.1:1")
+	if !strings.Contains(b.String(), "by Bright Lantern.app") || !strings.Contains(b.String(), "left over") {
+		t.Errorf("status = \n%s\nwant the app named, and the plist called left over", b.String())
+	}
+}
+
+func TestServiceStatusM13AndNothing(t *testing.T) {
+	p := testServicePaths(t)
+
+	stubLaunchctl(t, "")
+	var b strings.Builder
+	_ = serviceStatus(&b, p, "127.0.0.1:1")
+	if !strings.HasPrefix(b.String(), "not installed") {
+		t.Errorf("with nothing anywhere, status = %q", b.String())
+	}
+
+	if err := os.MkdirAll(filepath.Dir(p.plist), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(p.plist, []byte("m13"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	stubLaunchctl(t, m13AgentPrint)
+	b.Reset()
+	_ = serviceStatus(&b, p, "127.0.0.1:1")
+	if got := b.String(); !strings.Contains(got, "installed  "+p.plist) || !strings.Contains(got, "loaded     yes, running") {
+		t.Errorf("M13 status = \n%s", got)
+	}
+}
+
 func TestManagedByApp(t *testing.T) {
 	if !managedByApp(appAgentPrint) {
 		t.Error("managedByApp(the app's agent) = false")

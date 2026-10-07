@@ -550,7 +550,7 @@ answers `notFound` there.
   rebuilding the job from the BTM records. `managedByApp` spots such a job by
   `managed_by = com.apple.xpc.ServiceManagement` -- `launchctl print` has no
   `program =` line for one -- and `service install` and `uninstall` both
-  leave it alone.
+  leave it alone. `service status` names it as the app's (#89).
 - **When the agent will not start, ask launchd why.** `launchctl print`
   says *that* a spawn failed; `log show --predicate 'process == "launchd"
   AND eventMessage CONTAINS "brightlantern"'` says why. `needs LWCR update`

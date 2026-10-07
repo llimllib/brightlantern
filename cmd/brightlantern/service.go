@@ -5,6 +5,7 @@ import (
 	"encoding/xml"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -120,7 +121,7 @@ func runService(args []string, addr string) error {
 	case "restart":
 		return launchctl("kickstart", "-k", serviceTarget())
 	case "status":
-		return serviceStatus(p, addr)
+		return serviceStatus(os.Stdout, p, addr)
 	default:
 		fmt.Fprint(os.Stderr, serviceUsage)
 		os.Exit(2)
@@ -225,23 +226,38 @@ func serviceUninstall(p servicePaths) error {
 	return nil
 }
 
-func serviceStatus(p servicePaths, addr string) error {
-	if _, err := os.Stat(p.plist); errors.Is(err, os.ErrNotExist) {
-		fmt.Println("not installed; 'brightlantern service install' installs it")
+// serviceStatus says who runs the agent and whether it is answering.
+//
+// The app's agent comes first (#89). It has no plist in ~/Library/LaunchAgents
+// -- SMAppService registers the one inside the bundle -- so looking only there
+// reported "not installed" for a daemon that was running, and suggested
+// service install, the one command that must not be run over it.
+func serviceStatus(w io.Writer, p servicePaths, addr string) error {
+	out := launchctlPrint()
+	switch {
+	case managedByApp(out):
+		fmt.Fprintln(w, "installed  by Bright Lantern.app; turn it off in System Settings, under Background App Activity")
+		if _, err := os.Stat(p.plist); err == nil {
+			// Ignored by launchd while the app holds the label, and removed
+			// by the app's next launch. Worth naming, not worth alarm.
+			fmt.Fprintf(w, "           %s is left over from 'service install' and unused\n", p.plist)
+		}
+	case fileExists(p.plist):
+		fmt.Fprintf(w, "installed  %s\n", p.plist)
+	default:
+		fmt.Fprintln(w, "not installed; open Bright Lantern.app, or run 'brightlantern service install'")
 		return nil
 	}
-	fmt.Printf("installed  %s\n", p.plist)
 
-	out, err := exec.Command("launchctl", "print", serviceTarget()).CombinedOutput()
-	if err != nil {
-		fmt.Println("loaded     no (it loads at the next login, or on install)")
+	if out == "" {
+		fmt.Fprintln(w, "loaded     no (it loads at the next login, or on install)")
 	} else {
-		state, pid := launchctlState(string(out))
+		state, pid := launchctlState(out)
 		line := state
 		if pid != "" {
 			line += ", pid " + pid
 		}
-		fmt.Printf("loaded     yes, %s\n", line)
+		fmt.Fprintf(w, "loaded     yes, %s\n", line)
 	}
 
 	if in := probeInstance(addr); in != nil {
@@ -249,13 +265,18 @@ func serviceStatus(p servicePaths, addr string) error {
 		if in.Semantic {
 			search = "semantic"
 		}
-		fmt.Printf("serving    brightlantern %s on http://%s, %s search\nindex      %s\n",
+		fmt.Fprintf(w, "serving    brightlantern %s on http://%s, %s search\nindex      %s\n",
 			in.Version, dialable(addr), search, in.Index)
 	} else {
-		fmt.Printf("serving    nothing answers on %s\n", addr)
+		fmt.Fprintf(w, "serving    nothing answers on %s\n", addr)
 	}
-	fmt.Printf("logs       %s\n", p.log)
+	fmt.Fprintf(w, "logs       %s\n", p.log)
 	return nil
+}
+
+func fileExists(path string) bool {
+	_, err := os.Stat(path)
+	return err == nil
 }
 
 var (
