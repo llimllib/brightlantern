@@ -41,7 +41,9 @@ attestation check. Its version is pinned equal to `package.json`'s
 `mise run test` depends on `ts`: the web package embeds
 `internal/web/static`, and `app.js` is generated, not committed.
 
-CI is Linux and has no GPU, so the semantic tests skip -- see below.
+CI runs on `macos-26`, the release runner's image (#91), and builds and tests
+the app as well. Whether its virtual GPU can run llama.cpp's Metal backend is
+unknown; the semantic tests skip when it cannot -- see below.
 
 `setup` deletes its build tree when it finishes: building the fork leaves
 473MB behind to produce a 3.2MB dylib, and a rebuild from nothing is a minute.

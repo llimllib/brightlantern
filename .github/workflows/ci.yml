@@ -15,14 +15,18 @@ permissions:
 
 jobs:
   check:
-    runs-on: ubuntu-latest
+    # macOS, the only platform Bright Lantern runs on (#91), and the release
+    # runner's image: the titles helper and the app link frameworks from the
+    # macOS 26 SDK, which Linux CI could never build. Pinned for the same
+    # reason release.yml is.
+    runs-on: macos-26
     steps:
       - uses: actions/checkout@v7
 
-      # No libsqlite3-dev step. sqlite-vec's cgo bindings include sqlite3.h,
-      # but the sqlite-header task stages the one matching the amalgamation
-      # go-sqlite3 actually links, and CGO_CFLAGS points at it -- so the
-      # runner's system headers are neither needed nor consulted.
+      # No sqlite step. sqlite-vec's cgo bindings include sqlite3.h, but the
+      # sqlite-header task stages the one matching the amalgamation go-sqlite3
+      # actually links, and CGO_CFLAGS points at it -- so the SDK's header is
+      # neither needed nor consulted.
 
       # Installs go, node, pnpm, and golangci-lint from mise.toml, and brings
       # the [env] block with it -- which is where GOFLAGS=-tags=sqlite_fts5
@@ -41,10 +45,23 @@ jobs:
         uses: actions/cache@v6
         with:
           path: |
-            ~/.cache/go-build
+            ~/Library/Caches/go-build
             ~/go/pkg/mod
           key: go-${{ runner.os }}-${{ hashFiles('go.sum') }}
           restore-keys: go-${{ runner.os }}-
+
+      # The model and the sqlite-lembed dylib: a 25MB download and a minute
+      # of llama.cpp, keyed on the script that makes them. Before check, so
+      # the semantic tests run if the runner reaches Metal and skip if not.
+      - name: Cache embedding model and extension
+        uses: actions/cache@v6
+        with:
+          path: |
+            ~/.local/share/brightlantern/lembed0.dylib
+            ~/.local/share/brightlantern/all-MiniLM-L6-v2.Q8_0.gguf
+          key: lembed-${{ runner.os }}-${{ hashFiles('mise-tasks/setup') }}
+
+      - run: mise run setup
 
       - run: pnpm install --frozen-lockfile
 
@@ -62,6 +79,17 @@ jobs:
       - name: Smoke test
         run: ./brightlantern info
 
+      # The app's logic that needs no window: registration decisions, the
+      # startup pages, reading config.toml.
+      - name: App tests
+        run: mise run app-test
+
+      # The bundle, signed ad-hoc (the runner has no Developer ID), ending in
+      # codesign --verify --strict --deep. Registering it needs a login
+      # session, which a runner does not have.
+      - name: Build the app
+        run: mise run app
+
       # Playwright's browsers are a download into a shared cache, not a
       # repository dependency, so they have to be asked for explicitly. Keyed
       # on the lockfile because the browser build is pinned to the
@@ -69,11 +97,11 @@ jobs:
       - name: Cache Playwright browsers
         uses: actions/cache@v6
         with:
-          path: ~/.cache/ms-playwright
+          path: ~/Library/Caches/ms-playwright
           key: playwright-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
 
       - name: Install Playwright browser
-        run: pnpm exec playwright install --with-deps chromium
+        run: pnpm exec playwright install chromium
 
       # The only tests that drive a browser, and so the only ones that can
       # tell whether j moves the cursor or a match scrolls into view. Kept out
