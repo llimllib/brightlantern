@@ -67,17 +67,8 @@ fi
 
 # Fail loudly if the installed extension is the crashing upstream build rather
 # than the fork. The difference only shows up as a process death much later.
+# Through Go rather than python3: most Pythons' sqlite3 cannot load extensions.
 echo "==> verifying"
-python3 - "$EXT" <<'PY'
-import sqlite3, sys
-ext = sys.argv[1]
-db = sqlite3.connect(":memory:")
-db.enable_load_extension(True)
-db.load_extension(ext)
-version = db.execute("select lembed_version()").fetchone()[0]
-print("lembed:", version)
-if "landrix" not in version:
-    sys.exit(f"ERROR: {ext} is not the patched fork; run 'rm {ext}' and retry")
-PY
+(cd "$(dirname "$0")/.." && go run ./internal/embed/lembed-version "$EXT")
 
 ls -lh "$DATA_DIR"/*.gguf "$DATA_DIR"/*."${EXT_FILE##*.}"

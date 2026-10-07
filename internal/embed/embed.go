@@ -338,7 +338,37 @@ func (e *Embedder) Version() string { return e.version }
 // IsPatchedFork reports whether the loaded extension is the landrix fork, which
 // returns errors where upstream crashed the process.
 func (e *Embedder) IsPatchedFork() bool {
-	return strings.Contains(e.version, forkVersionMarker)
+	return IsForkVersion(e.version)
+}
+
+// IsForkVersion reports whether a lembed_version() string is the landrix fork's.
+func IsForkVersion(v string) bool {
+	return strings.Contains(v, forkVersionMarker)
+}
+
+// ExtensionVersion loads the extension at path into an in-memory database and
+// returns lembed_version(). It needs no model and no GPU, so it answers in a
+// sandbox where opening a semantic connection would not; mise-tasks/setup uses
+// it, through ./internal/embed/lembed-version, to check what it built.
+func ExtensionVersion(path string) (string, error) {
+	drv := &sqlite3.SQLiteDriver{Extensions: []string{path}}
+	c, err := drv.Open(":memory:")
+	if err != nil {
+		return "", fmt.Errorf("loading %s: %w", path, err)
+	}
+	defer c.Close()
+
+	rows, err := c.(*sqlite3.SQLiteConn).Query(`SELECT lembed_version()`, nil)
+	if err != nil {
+		return "", err
+	}
+	defer rows.Close()
+	vals := make([]driver.Value, 1)
+	if err := rows.Next(vals); err != nil {
+		return "", err
+	}
+	v, _ := vals[0].(string)
+	return v, nil
 }
 
 // Name identifies the model for index metadata.
