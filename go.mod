@@ -12,10 +12,10 @@ require (
 	github.com/yuin/goldmark v1.8.6
 	github.com/yuin/goldmark-highlighting/v2 v2.0.0-20230729083705-37449abec8cc
 	golang.org/x/net v0.58.0
+	golang.org/x/sys v0.47.0
 )
 
 require (
 	github.com/andybalholm/cascadia v1.3.4 // indirect
 	github.com/dlclark/regexp2/v2 v2.2.1 // indirect
-	golang.org/x/sys v0.47.0 // indirect
 )

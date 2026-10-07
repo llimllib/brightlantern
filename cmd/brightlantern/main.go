@@ -35,6 +35,8 @@ usage:
   brightlantern stats [flags]   report what is in the index
   brightlantern doctor [flags]  check the index for inconsistencies
   brightlantern info            show paths and configuration
+  brightlantern init            find session directories and write the
+                           settings file, without indexing
   brightlantern service install|uninstall|restart|status
                            run at login as a LaunchAgent
   brightlantern version
@@ -53,6 +55,7 @@ flags:
   --no-watch     do not index in the background while serving
   --wait         if the address is taken, wait for it to come free rather
                  than exiting (what the LaunchAgent runs)
+  --log PATH     append stdout and stderr to PATH; ~ is expanded
   --no-titles    do not generate session titles (same as titles = "off")
   --titles N     stop after generating N titles (0 for no limit)
   --titles-via   apple (Apple's on-device model: no key, no bill),
@@ -93,6 +96,7 @@ func main() {
 	noWatch := fs.Bool("no-watch", false, "do not index in the background")
 	force := fs.Bool("force", false, "index even while a server is keeping the index current")
 	wait := fs.Bool("wait", false, "if the address is taken, wait for it rather than exiting")
+	logPath := fs.String("log", "", "append stdout and stderr to this file")
 	_ = fs.Bool("no-titles", false, "do not generate session titles") // read via givenFlags
 	// Titling the whole corpus costs real money. A limit makes a trial run
 	// possible -- newest sessions first, so it titles what is worth looking at
@@ -105,6 +109,13 @@ func main() {
 	switch cmd {
 	case "serve":
 		_ = fs.Parse(args)
+		// First, so that everything after it -- resolve's notes included --
+		// is in the log.
+		if *logPath != "" {
+			if lerr := logTo(*logPath); lerr != nil {
+				note("could not log to %s: %v", *logPath, lerr)
+			}
+		}
 		if s, serr := resolve(givenFlags(fs), dirs, *dbPath, *addr, *titleVia); serr != nil {
 			err = serr
 		} else {
@@ -135,6 +146,9 @@ func main() {
 	case "info":
 		_ = fs.Parse(args)
 		err = runInfo(configuredDB(givenFlags(fs), *dbPath), dirs)
+	case "init":
+		_ = fs.Parse(args)
+		err = runInit()
 	case "service":
 		// Its own subcommands come before any flags: service install --addr X.
 		sub, rest := args, []string(nil)
@@ -672,6 +686,38 @@ func runInfo(dbPath string, flagged dirList) error {
 	}
 	probe.Close()
 	fmt.Printf("semantic   available (%s, %d dims)\n", embed.ModelName, embed.Dim)
+	return nil
+}
+
+// runInit is a first run's settings file and nothing else: what serve or
+// index would detect and write down, without going on to index.
+//
+// Bright Lantern.app runs it before registering the agent (#74). The agent
+// must not be the first run, because it would detect in launchd's environment
+// and write that answer down for good -- the reason service install refuses
+// -- and the app, opened from Finder, has no terminal to send anyone to. The
+// app passes CLAUDE_CONFIG_DIR from the login shell, which is all launchd's
+// environment loses that detection reads.
+//
+// An existing file is left alone and is not an error: the app asks only when
+// there is none, but nothing is gained by refusing.
+func runInit() error {
+	if _, had, err := config.Load(); err != nil {
+		return err
+	} else if had {
+		fmt.Println("already configured:", config.Path())
+		return nil
+	}
+	if _, err := resolve(map[string]bool{}, nil, index.DefaultPath(), config.DefaultAddr, titles.BackendApple); err != nil {
+		return err
+	}
+	// resolve treats a failed write as a note, because serve works without the
+	// file. Writing it is all init is for.
+	if _, had, err := config.Load(); err != nil {
+		return err
+	} else if !had {
+		return fmt.Errorf("could not write %s", config.Path())
+	}
 	return nil
 }
 
