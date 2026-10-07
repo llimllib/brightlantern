@@ -69,21 +69,43 @@ description = "Build build/Bright Lantern.app"
 # docs/plans/2026-10-06-wkwebview-shell-design.md.
 #
 # Not a dependency of check: CI is Linux, and this does nothing there.
-sources = ["cmd/brightlantern-app/*.swift", "cmd/brightlantern-app/Info.plist"]
-outputs = ["build/Bright Lantern.app/Contents/MacOS/brightlantern-app", "build/Bright Lantern.app/Contents/Info.plist"]
+#
+# The daemon rides inside, so that SMAppService can register an agent that is
+# part of the bundle and an upgrade replaces both at once (#86). Everything in
+# Contents/MacOS is nested code and has to be signed on its own before the
+# bundle is, and a data file there stops the bundle signing at all -- so the
+# model goes in Resources, and embed.DefaultPaths knows to pair the two.
+depends = ["build", "setup"]
+sources = [
+  "cmd/brightlantern-app/*.swift",
+  "cmd/brightlantern-app/Info.plist",
+  "brightlantern",
+  "{{env.BRIGHTLANTERN_DATA_DIR}}/brightlantern-apple",
+  "{{env.BRIGHTLANTERN_DATA_DIR}}/lembed0.dylib",
+  "{{env.BRIGHTLANTERN_DATA_DIR}}/all-MiniLM-L6-v2.Q8_0.gguf",
+]
+outputs = ["build/Bright Lantern.app/Contents/MacOS/brightlantern-app", "build/Bright Lantern.app/Contents/MacOS/brightlantern", "build/Bright Lantern.app/Contents/Info.plist"]
 run = '''
 if [ "$(uname)" != Darwin ]; then echo "app: not macOS, skipping"; exit 0; fi
 command -v swiftc >/dev/null || { echo "app: no swiftc; install Command Line Tools: xcode-select --install" >&2; exit 1; }
 plutil -lint -s cmd/brightlantern-app/Info.plist
 contents="build/Bright Lantern.app/Contents"
-mkdir -p "$contents/MacOS"
+mkdir -p "$contents/MacOS" "$contents/Resources"
 cp cmd/brightlantern-app/Info.plist "$contents/Info.plist"
 swiftc -O -target arm64-apple-macos26.0 -o "$contents/MacOS/brightlantern-app" cmd/brightlantern-app/main.swift cmd/brightlantern-app/menu.swift cmd/brightlantern-app/address.swift cmd/brightlantern-app/startup.swift
-# The linker ad-hoc signs the executable alone, under its file name and with
-# Info.plist unbound. Sealing the bundle puts the signature under the bundle
-# identifier, which is what privacy permissions attach to. Ad-hoc only: the
-# Developer ID is for releases (#78).
+cp brightlantern "$BRIGHTLANTERN_DATA_DIR/brightlantern-apple" "$BRIGHTLANTERN_DATA_DIR/lembed0.dylib" "$contents/MacOS/"
+cp "$BRIGHTLANTERN_DATA_DIR/all-MiniLM-L6-v2.Q8_0.gguf" "$contents/Resources/"
+# Nested code first, then the bundle: signing the bundle seals the hashes of
+# what is inside it, and does not sign it. The linker ad-hoc signs the app's
+# executable alone, under its file name and with Info.plist unbound; sealing
+# the bundle puts the signature under the bundle identifier, which is what
+# privacy permissions attach to. Ad-hoc only: the Developer ID is for releases
+# (#78).
+for f in brightlantern brightlantern-apple lembed0.dylib; do
+  codesign --force --sign - "$contents/MacOS/$f"
+done
 codesign --force --sign - "build/Bright Lantern.app"
+codesign --verify --strict --deep "build/Bright Lantern.app"
 '''
 
 [tasks.app-test]

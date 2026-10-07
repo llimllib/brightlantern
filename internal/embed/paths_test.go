@@ -91,3 +91,54 @@ func TestCandidateDirsPutsTheEnvironmentFirst(t *testing.T) {
 		t.Errorf("candidateDirs() = %v, want %q first", got, dir)
 	}
 }
+
+// Bright Lantern.app keeps the extension in Contents/MacOS and the model in
+// Contents/Resources, because a data file among the executables stops the
+// bundle signing. Neither directory holds both, so only a candidate that pairs
+// them finds the install -- and it has to come before the data directory, or a
+// bundle on a machine that also ran 'mise run setup' would use that instead.
+func TestCandidatesPairABundlesExtensionWithItsResources(t *testing.T) {
+	contents := filepath.Join(t.TempDir(), "Bright Lantern.app", "Contents")
+	macos := filepath.Join(contents, "MacOS")
+	resources := filepath.Join(contents, "Resources")
+	for _, dir := range []string{macos, resources} {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, f := range []string{filepath.Join(macos, extensionFile()), filepath.Join(resources, ModelFile)} {
+		if err := os.WriteFile(f, nil, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	data := t.TempDir()
+	install(t, data)
+
+	cands := candidates([]string{macos, data})
+	var found *Paths
+	for i := range cands {
+		if cands[i].Check() == nil {
+			found = &cands[i]
+			break
+		}
+	}
+	want := Paths{
+		Extension: filepath.Join(macos, extensionFile()),
+		Model:     filepath.Join(resources, ModelFile),
+	}
+	if found == nil || *found != want {
+		t.Errorf("first installed candidate = %+v, want %+v", found, want)
+	}
+}
+
+// Only Contents/MacOS gets a Resources candidate: an ordinary directory named
+// MacOS is not a bundle.
+func TestBundleResourcesNeedsContents(t *testing.T) {
+	if _, ok := bundleResources(filepath.Join("/tmp", "MacOS")); ok {
+		t.Error("bundleResources(/tmp/MacOS) = ok, want not a bundle")
+	}
+	got, ok := bundleResources(filepath.Join("/A.app", "Contents", "MacOS"))
+	if want := filepath.Join("/A.app", "Contents", "Resources"); !ok || got != want {
+		t.Errorf("bundleResources = %q, %v; want %q", got, ok, want)
+	}
+}

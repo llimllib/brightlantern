@@ -44,10 +44,7 @@ type Apple struct {
 // a machine without Apple Intelligence gets one message at startup rather
 // than one per session.
 func NewApple() (*Apple, error) {
-	bin, ok := embed.Beside(AppleHelper)
-	if env := strings.TrimSpace(os.Getenv("BRIGHTLANTERN_APPLE_BIN")); env != "" {
-		bin, ok = env, true
-	}
+	bin, ok := AppleHelperPath()
 	if !ok {
 		return nil, fmt.Errorf("%s is not installed (looked for %s); run 'mise run apple'", AppleHelper, bin)
 	}
@@ -63,6 +60,15 @@ func NewApple() (*Apple, error) {
 		return nil, fmt.Errorf("%s --check: %w", bin, err)
 	}
 	return a, nil
+}
+
+// AppleHelperPath is where the helper is, or where it would be installed when
+// it is nowhere. BRIGHTLANTERN_APPLE_BIN overrides the search.
+func AppleHelperPath() (string, bool) {
+	if env := strings.TrimSpace(os.Getenv("BRIGHTLANTERN_APPLE_BIN")); env != "" {
+		return env, true
+	}
+	return embed.Beside(AppleHelper)
 }
 
 func (a *Apple) Name() string { return "apple-foundation-models" }

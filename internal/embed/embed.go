@@ -172,15 +172,46 @@ const ModelFile = "all-MiniLM-L6-v2.Q8_0.gguf"
 // Resolving the executable rather than stamping a prefix in at build time means
 // the archive works wherever it is unpacked, and means the release build and
 // the development build are the same binary.
+//
+// The third is Bright Lantern.app, which cannot keep the model beside the
+// binary: everything in Contents/MacOS is signed as nested code, and a data
+// file there stops the bundle signing at all. So it splits them, and the model
+// is in Contents/Resources (#86).
 func DefaultPaths() Paths {
-	dirs := candidateDirs()
-	for _, dir := range dirs {
-		p := pathsIn(dir)
+	cands := candidates(candidateDirs())
+	for _, p := range cands {
 		if p.Check() == nil {
 			return p
 		}
 	}
-	return pathsIn(dirs[len(dirs)-1])
+	return cands[len(cands)-1]
+}
+
+// candidates pairs an extension with a model for each directory, plus, for a
+// directory that is an app bundle's Contents/MacOS, that extension with the
+// bundle's Resources. Both files are checked together, so a bundle that split
+// them would otherwise match nothing.
+func candidates(dirs []string) []Paths {
+	var ps []Paths
+	for _, dir := range dirs {
+		ps = append(ps, pathsIn(dir))
+		if res, ok := bundleResources(dir); ok {
+			ps = append(ps, Paths{
+				Extension: filepath.Join(dir, extensionFile()),
+				Model:     filepath.Join(res, ModelFile),
+			})
+		}
+	}
+	return ps
+}
+
+// bundleResources returns Contents/Resources for a Contents/MacOS directory.
+func bundleResources(dir string) (string, bool) {
+	contents := filepath.Dir(dir)
+	if filepath.Base(dir) != "MacOS" || filepath.Base(contents) != "Contents" {
+		return "", false
+	}
+	return filepath.Join(contents, "Resources"), true
 }
 
 func pathsIn(dir string) Paths {

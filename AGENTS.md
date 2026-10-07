@@ -501,6 +501,28 @@ Nothing tests `launchctl` itself. The plist is checked with `plutil -lint`;
 the rest was exercised under launchd by hand, with a throwaway label, port and
 index, which is the way to test a change here without touching the real agent.
 
+## The app bundle
+
+`mise run app` builds `build/Bright Lantern.app` with the daemon **inside**
+it, so `SMAppService` registers an agent that is part of the bundle and an
+upgrade replaces both at once (#86, reasoning in
+`docs/plans/2026-10-06-smappservice-design.md`). `brightlantern`,
+`brightlantern-apple` and `lembed0.dylib` sit beside `brightlantern-app` in
+`Contents/MacOS`; the model is in `Contents/Resources`.
+
+**The model cannot go in `MacOS`.** Everything there is signed as nested
+code, and a data file there stops the bundle signing at all: "code object is
+not signed at all", naming the file. So each executable and the dylib are
+signed on their own first, then the bundle, and `embed.DefaultPaths` has a
+candidate pairing `Contents/MacOS`'s dylib with `Contents/Resources`'s model.
+`Beside` needs nothing: the helper is an executable and stays beside the
+binary.
+
+`BRIGHTLANTERN_DATA_DIR` is first in precedence and `mise.toml` sets it, so the
+bundled daemon run from a mise shell uses the data directory, not the bundle.
+Run it with `env -u BRIGHTLANTERN_DATA_DIR` to see what launchd will;
+`brightlantern info` prints the extension, model and helper it resolved.
+
 ## Titles
 
 `sessions.title` is written by `internal/titles`, a pass that runs *after* a

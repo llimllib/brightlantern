@@ -640,8 +640,13 @@ func runInfo(dbPath string, flagged dirList) error {
 		settingsLine += "  (not written yet)"
 	}
 
-	fmt.Printf("sessions   %s\nsettings   %s\nindex      %s\nextension  %s\nmodel      %s\n\n",
-		sessions, settingsLine, dbPath, paths.Extension, paths.Model)
+	helper, ok := titles.AppleHelperPath()
+	if !ok {
+		helper += "  (not installed)"
+	}
+
+	fmt.Printf("sessions   %s\nsettings   %s\nindex      %s\nextension  %s\nmodel      %s\nhelper     %s\n\n",
+		sessions, settingsLine, dbPath, paths.Extension, paths.Model, helper)
 
 	if err := index.CheckFTS5(); err != nil {
 		fmt.Println("fts5       missing:", err)
