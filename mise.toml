@@ -78,7 +78,7 @@ plutil -lint -s cmd/brightlantern-app/Info.plist
 contents="build/Bright Lantern.app/Contents"
 mkdir -p "$contents/MacOS"
 cp cmd/brightlantern-app/Info.plist "$contents/Info.plist"
-swiftc -O -target arm64-apple-macos26.0 -o "$contents/MacOS/brightlantern-app" cmd/brightlantern-app/main.swift cmd/brightlantern-app/address.swift
+swiftc -O -target arm64-apple-macos26.0 -o "$contents/MacOS/brightlantern-app" cmd/brightlantern-app/main.swift cmd/brightlantern-app/menu.swift cmd/brightlantern-app/address.swift
 # The linker ad-hoc signs the executable alone, under its file name and with
 # Info.plist unbound. Sealing the bundle puts the signature under the bundle
 # identifier, which is what privacy permissions attach to. Ad-hoc only: the

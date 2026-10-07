@@ -105,7 +105,14 @@ mise run setup    # embedding model + sqlite-lembed, once
 mise run index    # build the search index
 mise run dev      # http://localhost:5269, reading the index the agent keeps
 mise run check    # vet, lint, typecheck, gofmt, test
+mise run app      # build/Bright Lantern.app, a window onto the server
 ```
+
+The app is a window onto the server, not the server itself. Quitting it
+leaves the LaunchAgent running, which is the point: the index stays current
+and search stays warm whether or not a window is open. To stop the service,
+use `brightlantern service uninstall`. `open "build/Bright Lantern.app" --args
+--url http://127.0.0.1:5269/` points it at `mise run dev`.
 
 See [AGENTS.md](AGENTS.md) for the things that cost somebody an hour.
 
