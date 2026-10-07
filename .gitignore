@@ -24,3 +24,6 @@
 
 # Release assets staged by `mise run release-assets`.
 /build/
+
+# mac crap
+.DS_Store
