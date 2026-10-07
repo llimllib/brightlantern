@@ -56,7 +56,10 @@ jobs:
         uses: actions/cache@v6
         with:
           path: ~/.local/share/brightlantern
-          key: lembed-${{ runner.os }}-${{ hashFiles('mise-tasks/setup') }}
+          # The titles helper is built into the same directory, so its source
+          # is part of the key: otherwise a changed main.swift would rely on
+          # mise judging the restored binary stale by mtime.
+          key: lembed-${{ runner.os }}-${{ hashFiles('mise-tasks/setup', 'cmd/brightlantern-apple/*.swift') }}
 
       # For `mise run ts`, which .goreleaser.yaml runs as a before hook:
       # internal/web embeds internal/web/static, and app.js is generated.
