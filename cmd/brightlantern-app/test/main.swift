@@ -144,6 +144,11 @@ check(agentPlan(facts(config: false, legacy: true, .notRegistered)), [.writeConf
 check(agentPlan(facts(legacy: true, .enabled)), [.removeLegacy, .reregister],
       "removing an M13 agent stops ours too, unchanged daemon or not")
 
+check(problemWhileWaiting(nil, requiresApproval: true), .needsApproval, "switched off with the window open")
+check(problemWhileWaiting(.needsApproval, requiresApproval: false), nil, "switched back on: wait for it again")
+check(problemWhileWaiting(.firstRun("x"), requiresApproval: false), .firstRun("x"), "a launch problem stays")
+check(problemWhileWaiting(.failed("x"), requiresApproval: true), .needsApproval, "the switch explains more than a failure")
+
 check(legacyPlistPath(home: "/Users/x"), "/Users/x/Library/LaunchAgents/org.billmill.brightlantern.plist",
       "service.go's plist")
 

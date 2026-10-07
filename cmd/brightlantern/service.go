@@ -156,7 +156,7 @@ func serviceInstall(p servicePaths) error {
 	if managedByApp(launchctlPrint()) {
 		return errors.New("brightlantern already runs at login through Bright Lantern.app; " +
 			"to use this install instead, turn Bright Lantern off in " +
-			"System Settings > General > Login Items first")
+			"System Settings, under Background App Activity, first")
 	}
 
 	program, err := agentProgram()
@@ -214,7 +214,7 @@ func serviceUninstall(p servicePaths) error {
 			return err
 		}
 		fmt.Println("Bright Lantern.app runs brightlantern at login, and is left alone; " +
-			"to stop it, turn Bright Lantern off in System Settings > General > Login Items")
+			"to stop it, turn Bright Lantern off in System Settings, under Background App Activity")
 		return nil
 	}
 	_ = launchctlQuiet("bootout", serviceTarget())

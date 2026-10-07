@@ -92,11 +92,11 @@ func problemPage(_ problem: AgentProblem) -> String {
             """
     case .needsApproval:
         body = """
-            <h1>Bright Lantern is turned off in Login Items</h1>
+            <h1>Bright Lantern is turned off in System Settings</h1>
             <p>It needs to run in the background to keep its index of your
-            sessions current. Turn it on in System Settings, and this window
-            will load.</p>
-            <p><a href="\(loginItemsURL)">Open Login Items</a></p>
+            sessions current. Turn it back on under Background App Activity,
+            and this window will load.</p>
+            <p><a href="\(loginItemsURL)">Open System Settings</a></p>
             """
     case .failed(let message):
         body = """

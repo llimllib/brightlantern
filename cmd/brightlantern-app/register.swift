@@ -98,6 +98,12 @@ private func registerRetrying(_ service: SMAppService) async throws {
     }
 }
 
+// agentRequiresApproval asks whether the agent is switched off in System
+// Settings right now. A local XPC call, cheap enough for every failed probe.
+func agentRequiresApproval() -> Bool {
+    SMAppService.agent(plistName: agentPlistName).status == .requiresApproval
+}
+
 private func agentStatus(_ s: SMAppService.Status) -> AgentStatus {
     switch s {
     case .notRegistered: return .notRegistered

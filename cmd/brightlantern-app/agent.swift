@@ -89,6 +89,18 @@ func agentPlan(_ f: AgentFacts) -> [AgentStep] {
     return steps
 }
 
+// problemWhileWaiting updates the window's problem each time the daemon fails
+// to answer. ensureAgent runs only at launch, so without this, someone who
+// switched Bright Lantern off under Background App Activity with the window
+// open got "starting" and then "not answering" -- true, and no help. Only the
+// approval problem comes and goes with the switch; one from launch stays.
+func problemWhileWaiting(_ current: AgentProblem?, requiresApproval: Bool) -> AgentProblem? {
+    if requiresApproval {
+        return .needsApproval
+    }
+    return current == .needsApproval ? nil : current
+}
+
 // fileHash identifies the daemon executable, which is what has to change for
 // re-registration to matter. Not CFBundleVersion: `mise run app` rebuilds the
 // daemon without changing any version, and that is the case seen most.

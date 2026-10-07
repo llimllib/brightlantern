@@ -567,7 +567,10 @@ answers `notFound` there.
   and `SMAppService.h` says a changed executable "may not launch" until
   re-registered. The hash is in the app's UserDefaults.
 - **`requiresApproval` is never registered over.** It means someone turned it
-  off in Login Items; the window says so and links there.
+  off in System Settings; the window says so and links there. On macOS 27
+  the switch is under **Background App Activity**, not a Login Items list,
+  so that is what user-facing text names. The app rechecks the status on
+  every failed probe, since the switch can flip with the window open.
 - **An M13 agent is replaced**, through the bundled `service uninstall`,
   and always followed by a registration: when the M13 job was the one
   loaded, booting it out leaves nothing running. `register()` straight after

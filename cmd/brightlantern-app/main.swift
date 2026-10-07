@@ -100,6 +100,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate {
             web.load(URLRequest(url: url))
             return
         }
+        agentProblem = problemWhileWaiting(agentProblem, requiresApproval: agentRequiresApproval())
         // A problem with the agent outranks "starting": it says why nothing
         // will start, which waiting would not.
         let page = agentProblem.map(problemPage)
