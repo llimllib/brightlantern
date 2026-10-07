@@ -116,6 +116,14 @@ check(startupPage(.stuck, address: "a", log: "/x/brightlantern.log")?.contains("
       "stuck names the log")
 check(startupPage(.starting, address: "<script>", log: "l")?.contains("<script>"), false,
       "the address comes from a file someone edits, so it is escaped")
+// The animation (#88): moving while starting, still once stuck, and never
+// varying per probe, or each reload would restart it.
+check(startupPage(.starting, address: "a", log: "l")?.contains(lantern), true, "starting shows the lantern")
+check(startupPage(.stuck, address: "a", log: "l")?.contains("class=\"lantern\""), false, "stuck stays still")
+check(startupPage(.starting, address: "a", log: "l")?.contains("prefers-reduced-motion"), true, "reduced motion is honoured")
+check(startupPage(.starting, address: "a", log: "l"), startupPage(.starting, address: "a", log: "l"),
+      "the same page every probe, so the animation runs on")
+
 check(logPath(home: "/Users/x"), "/Users/x/Library/Logs/brightlantern/brightlantern.log", "service.go's log")
 
 // agentPlan (#74)
@@ -148,6 +156,12 @@ check(problemWhileWaiting(nil, requiresApproval: true), .needsApproval, "switche
 check(problemWhileWaiting(.needsApproval, requiresApproval: false), nil, "switched back on: wait for it again")
 check(problemWhileWaiting(.firstRun("x"), requiresApproval: false), .firstRun("x"), "a launch problem stays")
 check(problemWhileWaiting(.failed("x"), requiresApproval: true), .needsApproval, "the switch explains more than a failure")
+
+check(leaveDaemonPage(showingDaemon: true, wasOff: false, isOff: true), true, "switched off under the page: leave it")
+check(leaveDaemonPage(showingDaemon: true, wasOff: true, isOff: true), false,
+      "still off, and a daemon answering anyway: no reload loop")
+check(leaveDaemonPage(showingDaemon: false, wasOff: false, isOff: true), false, "already waiting: the probe handles it")
+check(leaveDaemonPage(showingDaemon: true, wasOff: false, isOff: false), false, "on: nothing")
 
 check(legacyPlistPath(home: "/Users/x"), "/Users/x/Library/LaunchAgents/org.billmill.brightlantern.plist",
       "service.go's plist")

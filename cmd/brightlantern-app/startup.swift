@@ -61,6 +61,7 @@ func startupPage(_ state: Startup, address: String, log: String) -> String? {
         return nil
     case .starting:
         body = """
+            \(lantern)
             <h1>Waiting for Bright Lantern to start</h1>
             <p>Expecting it at \(escape(address)).</p>
             """
@@ -74,6 +75,59 @@ func startupPage(_ state: Startup, address: String, log: String) -> String? {
     }
     return page(body)
 }
+
+// lantern is the starting page's animation (#88): a photophore, the
+// lanternfish's light, breathing, with rings rippling out from it and motes
+// drifting up past it, as in deep water. The wait it covers can be the agent
+// being registered, launchd spawning the daemon and ~15s of Metal shaders,
+// and a still line of text reads as possibly stuck.
+//
+// CSS only: the page loads with no base URL, so there is nowhere to fetch
+// from. It runs across probes because startupPage only reloads when the HTML
+// changes, so nothing here may vary per probe. It fades in, because the page
+// itself appears only after a grace. Still under prefers-reduced-motion, and
+// absent from the stuck page, where movement would say "working" about
+// something that is not.
+let lantern = """
+    <div class="lantern" aria-hidden="true">
+      <span class="ring"></span><span class="ring"></span><span class="ring"></span>
+      <span class="glow"></span>
+      <span class="mote"></span><span class="mote"></span><span class="mote"></span>
+    </div>
+    """
+
+private let lanternStyle = """
+    .lantern { position: relative; width: 120px; height: 120px; margin: 0 0 1.25em;
+               animation: lantern-in 1.2s ease-out both; }
+    .lantern span { position: absolute; border-radius: 50%; }
+    .lantern .glow { inset: 40px;
+      background: radial-gradient(circle, #fff7df 0%, #ffd681 35%, #f5a623 62%, rgba(245,166,35,0) 74%);
+      box-shadow: 0 0 28px 10px rgba(245,166,35,0.4);
+      animation: lantern-breathe 3.6s ease-in-out infinite; }
+    .lantern .ring { inset: 40px; border: 1.5px solid rgba(245,166,35,0.6); opacity: 0;
+      animation: lantern-ripple 3.6s ease-out infinite; }
+    .lantern .ring:nth-child(2) { animation-delay: 1.2s; }
+    .lantern .ring:nth-child(3) { animation-delay: 2.4s; }
+    .lantern .mote { width: 3px; height: 3px; bottom: 14px; opacity: 0;
+      background: rgba(255,214,140,0.9); animation: lantern-drift 5.4s linear infinite; }
+    .lantern .mote:nth-of-type(5) { left: 30px; }
+    .lantern .mote:nth-of-type(6) { left: 78px; animation-delay: 1.8s; }
+    .lantern .mote:nth-of-type(7) { left: 92px; animation-delay: 3.6s; }
+    @keyframes lantern-in { from { opacity: 0; } to { opacity: 1; } }
+    @keyframes lantern-breathe {
+      0%, 100% { transform: scale(0.9); opacity: 0.8; }
+      50% { transform: scale(1.06); opacity: 1; } }
+    @keyframes lantern-ripple {
+      0% { transform: scale(1); opacity: 0.7; }
+      100% { transform: scale(2.7); opacity: 0; } }
+    @keyframes lantern-drift {
+      0% { transform: translateY(0); opacity: 0; }
+      15% { opacity: 0.9; }
+      100% { transform: translateY(-96px); opacity: 0; } }
+    @media (prefers-reduced-motion: reduce) {
+      .lantern, .lantern span { animation: none; }
+      .lantern .ring, .lantern .mote { display: none; } }
+    """
 
 // loginItemsURL is what the approval page's button navigates to. The web
 // view's delegate cancels it and opens Login Items instead.
@@ -118,6 +172,7 @@ private func page(_ body: String) -> String {
           h1 { font-size: 1.3em; font-weight: 600; }
           p, code, pre { opacity: 0.8; }
           pre { white-space: pre-wrap; font-size: 0.85em; }
+        \(lanternStyle)
         </style>
         \(body)
         """
