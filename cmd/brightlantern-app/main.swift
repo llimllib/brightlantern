@@ -2,8 +2,8 @@
 //
 // A client, not a host. The LaunchAgent from M13 is already running and
 // already indexing; this shows it without browser chrome. Nothing here
-// starts, stops or finds the daemon beyond reading where it listens -- see
-// address.swift.
+// starts or stops the daemon: address.swift finds where it listens, and
+// startup.swift decides what to say while it is not answering.
 //
 // Built with plain swiftc from Command Line Tools: `mise run app`, into
 // build/Bright Lantern.app. docs/plans/2026-10-06-wkwebview-shell-design.md
@@ -48,7 +48,71 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate {
         window.makeKeyAndOrderFront(nil)
         NSApp.activate()
 
-        web.load(URLRequest(url: url))
+        startProbing()
+    }
+
+    // MARK: Waiting for the daemon (#75)
+
+    // Each probe loop carries the generation it was started in, and stops
+    // when a newer one begins, so Reload or a failed load can restart the
+    // wait without leaving a second loop running behind it.
+    private var probeGeneration = 0
+    private var probeStarted = Date()
+    private var shown = Startup.quiet
+
+    private func startProbing() {
+        probeGeneration += 1
+        probeStarted = Date()
+        shown = .quiet
+        probe(probeGeneration)
+    }
+
+    private func probe(_ generation: Int) {
+        var request = URLRequest(url: statusURL(for: url))
+        request.cachePolicy = .reloadIgnoringLocalCacheData
+        // Long, because serve binds its port before it is ready to answer:
+        // a connection that is accepted and then waits is a daemon starting
+        // up, not a missing one. A refused connection fails at once whatever
+        // this says.
+        request.timeoutInterval = 10
+        URLSession.shared.dataTask(with: request) { _, response, _ in
+            let answered = response != nil
+            Task { @MainActor in self.probed(generation, answered: answered) }
+        }.resume()
+    }
+
+    private func probed(_ generation: Int, answered: Bool) {
+        guard generation == probeGeneration else { return }
+        let state = startup(answered: answered, elapsed: Date().timeIntervalSince(probeStarted))
+        if state == .ready {
+            web.load(URLRequest(url: url))
+            return
+        }
+        // Only on a change: reloading the same page every half second would
+        // flicker and lose any text someone had selected to copy.
+        if state != shown, let page = startupPage(state, address: displayAddress, log: logPath()) {
+            web.loadHTMLString(page, baseURL: nil)
+        }
+        shown = state
+        // Quickly while it is plausibly starting, so the page appears as soon
+        // as it can; slowly once it has been long enough to be stuck.
+        let interval: Duration = state == .stuck ? .seconds(2) : .milliseconds(500)
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(for: interval)
+            self?.probe(generation)
+        }
+    }
+
+    private var displayAddress: String {
+        let host = url.host(percentEncoded: false) ?? url.absoluteString
+        return url.port.map { "\(host):\($0)" } ?? host
+    }
+
+    // Whether the web view is showing the daemon, as opposed to one of the
+    // startup pages, which load with no URL of their own.
+    private var showingDaemon: Bool {
+        guard let current = web.url else { return false }
+        return current.scheme == url.scheme && current.host == url.host && current.port == url.port
     }
 
     // One window, so closing it is quitting. Quitting is the app and nothing
@@ -59,14 +123,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate {
 
     // MARK: View menu
 
-    // reload() alone does nothing after a load that never connected, because
-    // there is no current page to reload -- and "the daemon was down and is
-    // back" is the case Reload exists for (#73).
+    // reload() alone would reload a startup page, or nothing at all after a
+    // load that never connected -- and "the daemon was down and is back" is
+    // the case Reload exists for (#73). Away from the daemon, Reload starts
+    // the wait over, which loads it at once if it is there.
     @objc func reloadPage(_ sender: Any?) {
-        if web.url == nil {
-            web.load(URLRequest(url: url))
-        } else {
+        if showingDaemon {
             web.reload()
+        } else {
+            startProbing()
         }
     }
 
@@ -101,16 +166,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate {
         return Self.zoomSteps.contains(CGFloat(z)) ? CGFloat(z) : 1
     }
 
-    // Failures are logged and not handled; #75 owns what the window shows
-    // when the daemon is down. What is needed now is attribution: a blocked
-    // load and a dead daemon leave the same blank window, and the error code
-    // is the only thing that tells them apart.
+    // MARK: Failed loads
+
+    // A daemon that answered the probe can still be gone by the time the
+    // page loads, or go away under a page someone is reading and then be
+    // clicked on. Either is the wait again rather than WebKit's error page.
+    // Everything else is logged, because a blocked load and a dead daemon
+    // otherwise leave the same blank window and the code tells them apart.
     func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
-        report(error)
+        failed(error)
     }
 
     func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
+        failed(error)
+    }
+
+    private func failed(_ error: Error) {
         report(error)
+        let e = error as NSError
+        if e.domain == NSURLErrorDomain
+            && (e.code == NSURLErrorCannotConnectToHost || e.code == NSURLErrorNetworkConnectionLost) {
+            startProbing()
+        }
     }
 
     private func report(_ error: Error) {

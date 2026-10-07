@@ -78,7 +78,7 @@ plutil -lint -s cmd/brightlantern-app/Info.plist
 contents="build/Bright Lantern.app/Contents"
 mkdir -p "$contents/MacOS"
 cp cmd/brightlantern-app/Info.plist "$contents/Info.plist"
-swiftc -O -target arm64-apple-macos26.0 -o "$contents/MacOS/brightlantern-app" cmd/brightlantern-app/main.swift cmd/brightlantern-app/menu.swift cmd/brightlantern-app/address.swift
+swiftc -O -target arm64-apple-macos26.0 -o "$contents/MacOS/brightlantern-app" cmd/brightlantern-app/main.swift cmd/brightlantern-app/menu.swift cmd/brightlantern-app/address.swift cmd/brightlantern-app/startup.swift
 # The linker ad-hoc signs the executable alone, under its file name and with
 # Info.plist unbound. Sealing the bundle puts the signature under the bundle
 # identifier, which is what privacy permissions attach to. Ad-hoc only: the
@@ -87,12 +87,12 @@ codesign --force --sign - "build/Bright Lantern.app"
 '''
 
 [tasks.app-test]
-description = "Test the app's address resolution"
+description = "Test the app's logic that needs no window"
 run = '''
 if [ "$(uname)" != Darwin ]; then echo "app-test: not macOS, skipping"; exit 0; fi
 command -v swiftc >/dev/null || { echo "app-test: no swiftc; install Command Line Tools: xcode-select --install" >&2; exit 1; }
 mkdir -p build
-swiftc -target arm64-apple-macos26.0 -o build/app-test cmd/brightlantern-app/address.swift cmd/brightlantern-app/test/main.swift
+swiftc -target arm64-apple-macos26.0 -o build/app-test cmd/brightlantern-app/address.swift cmd/brightlantern-app/startup.swift cmd/brightlantern-app/test/main.swift
 build/app-test
 '''
 

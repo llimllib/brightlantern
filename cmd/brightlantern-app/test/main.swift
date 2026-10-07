@@ -93,6 +93,31 @@ check(resolve(["-NSDocumentRevisionsDebugMode", "YES"], nil), "http://127.0.0.1:
 check(configPath(environment: ["XDG_CONFIG_HOME": "/x"]), "/x/brightlantern/config.toml", "XDG_CONFIG_HOME")
 check(configPath(environment: [:]), NSHomeDirectory() + "/.config/brightlantern/config.toml", "home")
 
+// startup
+
+check(startup(answered: true, elapsed: 0), .ready, "an answer is ready at once")
+check(startup(answered: true, elapsed: 120), .ready, "and however late")
+check(startup(answered: false, elapsed: 0), .quiet, "say nothing at first")
+check(startup(answered: false, elapsed: startupGrace - 0.1), .quiet, "through the grace")
+check(startup(answered: false, elapsed: startupGrace), .starting, "then say starting")
+check(startup(answered: false, elapsed: startupStuckAfter - 0.1), .starting, "until it has been too long")
+check(startup(answered: false, elapsed: startupStuckAfter), .stuck, "then say where to look")
+
+check(statusURL(for: URL(string: "http://127.0.0.1:5268/")!).absoluteString,
+      "http://127.0.0.1:5268/status", "status beside the page")
+check(statusURL(for: URL(string: "http://127.0.0.1:5269/sessions/abc")!).absoluteString,
+      "http://127.0.0.1:5269/status", "status at the root, whatever --url named")
+
+check(startupPage(.quiet, address: "a", log: "l"), nil, "quiet shows nothing new")
+check(startupPage(.ready, address: "a", log: "l"), nil, "ready shows the daemon")
+check(startupPage(.starting, address: "127.0.0.1:5268", log: "l")?.contains("127.0.0.1:5268"), true,
+      "starting names the address")
+check(startupPage(.stuck, address: "a", log: "/x/brightlantern.log")?.contains("/x/brightlantern.log"), true,
+      "stuck names the log")
+check(startupPage(.starting, address: "<script>", log: "l")?.contains("<script>"), false,
+      "the address comes from a file someone edits, so it is escaped")
+check(logPath(home: "/Users/x"), "/Users/x/Library/Logs/brightlantern/brightlantern.log", "service.go's log")
+
 if failures > 0 {
     print("\(failures) failed")
     exit(1)
