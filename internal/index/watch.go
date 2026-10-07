@@ -252,11 +252,9 @@ func (w *Watcher) reindex(ctx context.Context, paths []string) (int, error) {
 		// The same rule Build applies, and it has to be applied here too or the
 		// filter only holds for files that arrive between runs.
 		//
-		// This is the path that matters most for it. The titles pass shells out
-		// to `claude -p`, which writes a session into a directory that may be
-		// one of the watched ones -- so a server generating titles produces
-		// exactly the files this excludes, while it runs. Indexing one makes it
-		// a candidate for titling, which writes another.
+		// This is the path that matters most for it: SDK sessions arrive while
+		// the server runs -- claude-bridge writes them as pi works, and until
+		// #91 the titles pass wrote them itself, through `claude -p`.
 		//
 		// Deleted rather than skipped: Build leaves that to its sweep over
 		// everything it excluded, and the watcher has no such sweep. Doing it

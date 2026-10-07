@@ -1,67 +1,26 @@
 package titles
 
-import "fmt"
-
-// Backends.
-const (
-	// BackendAPI calls the Anthropic API with ANTHROPIC_API_KEY.
-	BackendAPI = "api"
-
-	// BackendClaude shells out to the Claude Code CLI, which uses whatever
-	// authentication Claude Code has -- including a Pro or Max subscription,
-	// so the pass costs no API credit and needs no key.
-	BackendClaude = "claude"
-
-	// BackendApple uses Apple's on-device model: no key, no bill, no network.
-	// The only backend that works under launchd. Named for the provider rather
-	// than "local", so that another local model can be added without the name
-	// lying.
-	BackendApple = "apple"
-)
-
-// NewSummarizer builds the chosen backend.
+// One backend: Apple's on-device model (#91).
 //
-// There is deliberately no "auto". Detecting the Claude CLI and using it
-// because no API key was set would start spending a subscription's rate limit
-// -- shared with the interactive sessions it is actually for -- on a pass over
-// a thousand sessions, without anyone asking for it. The note for a missing
-// key names the alternative instead, which is discoverable without being
-// automatic.
-func NewSummarizer(backend string) (Summarizer, error) {
-	switch backend {
-	case "", BackendAPI:
-		s, err := NewAnthropic()
-		if err != nil {
-			// Name what the alternative costs, not just that it exists. Someone
-			// without an API key is usually a Claude Code user, for whom
-			// "claude" is the right answer -- but it spends the rate limit
-			// their interactive sessions share, and finding that out afterwards
-			// is the wrong order.
-			return nil, fmt.Errorf("%w.\n"+
-				"  --titles-via=claude uses the Claude Code CLI instead, which bills the\n"+
-				"  subscription it is signed in to and shares its rate limit with your\n"+
-				"  interactive sessions. --titles N caps a run, for trying it out", err)
-		}
-		return s, nil
-	case BackendClaude:
-		return NewClaudeCLI()
-	case BackendApple:
-		return NewApple()
-	default:
-		return nil, fmt.Errorf("unknown titles backend %q, want %q, %q or %q",
-			backend, BackendApple, BackendClaude, BackendAPI)
-	}
+// There were three. The Anthropic API and the Claude Code CLI both worked from
+// a terminal and neither worked under launchd, which has no ANTHROPIC_API_KEY
+// and no PATH that finds claude (#70) -- and launchd is how Bright Lantern.app
+// runs the daemon. Making them work there meant a key file, a resolved binary
+// path and a picker to choose between three backends; removing them meant
+// titles a little more generic (#84) and nothing ever leaving the machine.
+
+// NewSummarizer builds the on-device backend, or says why it cannot: most
+// often Apple Intelligence is off, not yet downloaded, or unavailable for this
+// region or language. The caller falls back to opening messages.
+func NewSummarizer() (Summarizer, error) {
+	return NewApple()
 }
 
-// ConcurrencyFor returns how many summaries to run at once for a backend.
-//
-// The CLI is a process per call rather than a request, and its rate limit is
-// a subscription's, so it gets a smaller number.
+// ConcurrencyFor returns how many summaries to run at once. A stub in a test
+// gets the default; the model is local, and more than AppleConcurrency is no
+// faster.
 func ConcurrencyFor(s Summarizer) int {
-	switch s.(type) {
-	case *ClaudeCLI:
-		return CLIConcurrency
-	case *Apple:
+	if _, ok := s.(*Apple); ok {
 		return AppleConcurrency
 	}
 	return DefaultConcurrency

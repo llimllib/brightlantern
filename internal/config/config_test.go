@@ -12,7 +12,7 @@ func TestSaveAndLoadRoundTrip(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "nested", "config.toml")
 	want := Config{
 		Dirs:   []string{"/Users/me/.claude/projects", "/Users/me/.pi/agent/sessions"},
-		Titles: TitlesClaude,
+		Titles: TitlesOff,
 		Addr:   "127.0.0.1:8765",
 		Index:  "/Users/me/.local/share/brightlantern/index.db",
 	}

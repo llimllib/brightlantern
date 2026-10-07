@@ -21,10 +21,8 @@ import (
 // left as an absent value, because "I decided not to" and "I have not been
 // asked yet" are different states and the titles pass acts on the difference.
 const (
-	TitlesOff    = "off"
-	TitlesApple  = "apple"
-	TitlesAPI    = "api"
-	TitlesClaude = "claude"
+	TitlesOff   = "off"
+	TitlesApple = "apple"
 )
 
 // DefaultAddr is where the web interface listens when nothing says otherwise.
@@ -119,12 +117,10 @@ func (c Config) SaveTo(path string) error {
 	}
 	b.WriteString("]\n\n")
 
-	b.WriteString("# How session titles are generated: apple, claude, api, or off.\n")
+	b.WriteString("# How session titles are generated: apple or off.\n")
 	b.WriteString("#   apple   Apple's on-device model; no key, no bill, nothing leaves\n")
-	b.WriteString("#           the machine. Needs Apple Intelligence turned on\n")
-	b.WriteString("#   claude  shells out to the Claude Code CLI, billing whatever\n")
-	b.WriteString("#           subscription it is signed in to\n")
-	b.WriteString("#   api     needs ANTHROPIC_API_KEY\n")
+	b.WriteString("#           the machine. Needs Apple Intelligence turned on, and\n")
+	b.WriteString("#           without it the list shows opening messages instead\n")
 	b.WriteString("#   off     lists each session under its opening message\n")
 	fmt.Fprintf(&b, "titles = %s\n\n", quote(c.Titles))
 

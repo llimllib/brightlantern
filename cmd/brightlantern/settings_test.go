@@ -53,7 +53,7 @@ func TestResolvePrecedence(t *testing.T) {
 		flagged := installSessions(t, filepath.Join(home, "from-flag"))
 		writeConfig(t, config.Config{Dirs: []string{"/from/config"}})
 
-		s, err := resolve(map[string]bool{}, dirList{flagged}, "db", "addr", "")
+		s, err := resolve(map[string]bool{}, dirList{flagged}, "db", "addr")
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -67,7 +67,7 @@ func TestResolvePrecedence(t *testing.T) {
 		installSessions(t, filepath.Join(home, ".pi", "agent", "sessions"))
 		writeConfig(t, config.Config{Dirs: []string{"/from/config"}})
 
-		s, err := resolve(map[string]bool{}, nil, "db", "addr", "")
+		s, err := resolve(map[string]bool{}, nil, "db", "addr")
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -80,7 +80,7 @@ func TestResolvePrecedence(t *testing.T) {
 		home := sandbox(t)
 		detected := installSessions(t, filepath.Join(home, ".pi", "agent", "sessions"))
 
-		s, err := resolve(map[string]bool{}, nil, "db", "addr", "")
+		s, err := resolve(map[string]bool{}, nil, "db", "addr")
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -91,7 +91,7 @@ func TestResolvePrecedence(t *testing.T) {
 
 	t.Run("nothing anywhere is an error naming the candidates", func(t *testing.T) {
 		sandbox(t)
-		if _, err := resolve(map[string]bool{}, nil, "db", "addr", ""); err == nil {
+		if _, err := resolve(map[string]bool{}, nil, "db", "addr"); err == nil {
 			t.Error("resolve() = nil error with no sessions anywhere")
 		}
 	})
@@ -104,7 +104,7 @@ func TestResolveHonoursAFlagSetToItsDefault(t *testing.T) {
 	installSessions(t, filepath.Join(home, ".pi", "agent", "sessions"))
 	writeConfig(t, config.Config{Dirs: []string{"/x"}, Addr: "0.0.0.0:9999", Index: "/from/config.db"})
 
-	s, err := resolve(map[string]bool{"addr": true, "db": true}, nil, "flag.db", config.DefaultAddr, "")
+	s, err := resolve(map[string]bool{"addr": true, "db": true}, nil, "flag.db", config.DefaultAddr)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -122,7 +122,7 @@ func TestResolveTakesAddrAndIndexFromTheFile(t *testing.T) {
 	installSessions(t, filepath.Join(home, ".pi", "agent", "sessions"))
 	writeConfig(t, config.Config{Dirs: []string{"/x"}, Addr: "0.0.0.0:9999", Index: "/from/config.db"})
 
-	s, err := resolve(map[string]bool{}, nil, "flag.db", config.DefaultAddr, "")
+	s, err := resolve(map[string]bool{}, nil, "flag.db", config.DefaultAddr)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -135,15 +135,16 @@ func TestResolveTitles(t *testing.T) {
 	tests := []struct {
 		name  string
 		given map[string]bool
-		via   string
 		cfg   string
 		want  string
 	}{
-		{"--no-titles wins", map[string]bool{"no-titles": true}, "claude", config.TitlesClaude, config.TitlesOff},
-		{"--titles-via beats the file", map[string]bool{"titles-via": true}, "claude", config.TitlesAPI, config.TitlesClaude},
-		{"the file is used", map[string]bool{}, "api", config.TitlesClaude, config.TitlesClaude},
-		{"off is honoured", map[string]bool{}, "api", config.TitlesOff, config.TitlesOff},
-		{"apple by default", map[string]bool{}, "api", "", config.TitlesApple},
+		{"--no-titles wins", map[string]bool{"no-titles": true}, config.TitlesApple, config.TitlesOff},
+		{"the file is used", map[string]bool{}, config.TitlesApple, config.TitlesApple},
+		{"off is honoured", map[string]bool{}, config.TitlesOff, config.TitlesOff},
+		{"apple by default", map[string]bool{}, "", config.TitlesApple},
+		// Backends until #91; someone who chose one wanted titles.
+		{"api becomes apple", map[string]bool{}, "api", config.TitlesApple},
+		{"claude becomes apple", map[string]bool{}, "claude", config.TitlesApple},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -151,7 +152,7 @@ func TestResolveTitles(t *testing.T) {
 			installSessions(t, filepath.Join(home, ".pi", "agent", "sessions"))
 			writeConfig(t, config.Config{Dirs: []string{"/x"}, Titles: tc.cfg})
 
-			s, err := resolve(tc.given, nil, "db", "addr", tc.via)
+			s, err := resolve(tc.given, nil, "db", "addr")
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -168,7 +169,7 @@ func TestResolveWritesTheFileOnFirstRun(t *testing.T) {
 	home := sandbox(t)
 	detected := installSessions(t, filepath.Join(home, ".pi", "agent", "sessions"))
 
-	if _, err := resolve(map[string]bool{}, nil, "db", "addr", ""); err != nil {
+	if _, err := resolve(map[string]bool{}, nil, "db", "addr"); err != nil {
 		t.Fatal(err)
 	}
 
@@ -200,7 +201,7 @@ func TestResolveFirstRunWritesTheDefaultAddrNotTheFlag(t *testing.T) {
 	home := sandbox(t)
 	installSessions(t, filepath.Join(home, ".pi", "agent", "sessions"))
 
-	s, err := resolve(map[string]bool{"addr": true}, nil, "db", "127.0.0.1:9999", "")
+	s, err := resolve(map[string]bool{"addr": true}, nil, "db", "127.0.0.1:9999")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -222,7 +223,7 @@ func TestResolveDoesNotWriteTheFileWhenDirWasGiven(t *testing.T) {
 	home := sandbox(t)
 	flagged := installSessions(t, filepath.Join(home, "elsewhere"))
 
-	if _, err := resolve(map[string]bool{}, dirList{flagged}, "db", "addr", ""); err != nil {
+	if _, err := resolve(map[string]bool{}, dirList{flagged}, "db", "addr"); err != nil {
 		t.Fatal(err)
 	}
 	if _, had, _ := config.Load(); had {
@@ -301,7 +302,7 @@ func TestResolveMovesTheDefaultIndex(t *testing.T) {
 	writeConfig(t, config.Config{Dirs: []string{installSessions(t, filepath.Join(home, "s"))}})
 	legacy := placeLegacyIndex(t)
 
-	s, err := resolve(map[string]bool{}, nil, index.DefaultPath(), config.DefaultAddr, "")
+	s, err := resolve(map[string]bool{}, nil, index.DefaultPath(), config.DefaultAddr)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -325,7 +326,7 @@ func TestResolveLeavesAConfiguredIndexAlone(t *testing.T) {
 	legacy := placeLegacyIndex(t)
 	writeConfig(t, config.Config{Dirs: []string{installSessions(t, filepath.Join(home, "s"))}, Index: legacy})
 
-	s, err := resolve(map[string]bool{}, nil, index.DefaultPath(), config.DefaultAddr, "")
+	s, err := resolve(map[string]bool{}, nil, index.DefaultPath(), config.DefaultAddr)
 	if err != nil {
 		t.Fatal(err)
 	}

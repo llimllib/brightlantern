@@ -292,8 +292,8 @@ func startIndexer(ctx context.Context, dbPath, driver string, dirs []string, tit
 	// point of them being a separate pass: nothing waits on a network call.
 	var titleOpts titles.Options
 	if titlesVia != config.TitlesOff {
-		if s, err := summarizer(titlesVia); err != nil {
-			note("titles disabled: %v", err)
+		if s, err := summarizer(); err != nil {
+			note("titles disabled; the list shows opening messages instead: %v", err)
 		} else {
 			titleOpts.Summarizer = s
 			titleOpts.Concurrency = titles.ConcurrencyFor(s)

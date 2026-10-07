@@ -135,7 +135,7 @@ func serviceInstall(p servicePaths) error {
 	// environment and write that answer down -- permanently, since a settings
 	// file is exactly what stops detection running again. So the first run has
 	// to have happened somewhere with a real environment.
-	cfg, had, err := config.Load()
+	_, had, err := config.Load()
 	if err != nil {
 		return err
 	}
@@ -143,11 +143,6 @@ func serviceInstall(p servicePaths) error {
 		return fmt.Errorf("run brightlantern once from a terminal first: it finds your "+
 			"session directories and writes them to %s, and should not do that from "+
 			"launchd's environment", config.Path())
-	}
-	if cfg.Titles != "" && cfg.Titles != config.TitlesApple && cfg.Titles != config.TitlesOff {
-		note("titles = %q in %s, which needs a key or a PATH that launchd does not provide; "+
-			"the agent will not generate titles. titles = \"apple\" works under launchd",
-			cfg.Titles, config.Path())
 	}
 
 	// Before writing anything: installing boots out the label, which with

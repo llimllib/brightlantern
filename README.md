@@ -53,19 +53,11 @@ same index unless given `--force`.
 
 ## Titles
 
-Sessions are listed under a generated title, falling back to their opening
-message. Three backends, set with `titles` in the config file or `--titles-via`:
-
-- `apple` uses Apple's on-device model: no key, no bill, nothing leaves the
-  machine. The default, and the only one that works when running at login.
-  Needs Apple Intelligence turned on.
-- `api` needs `ANTHROPIC_API_KEY`.
-- `claude` shells out to the Claude Code CLI, which bills whatever subscription
-  it is signed in to and shares a rate limit with your interactive sessions. A
-  run over a large corpus asks first. `--titles N` caps it, for trying it out.
-
-`titles = "off"` lists every session under its opening message, which is what
-Bright Lantern did for its first five milestones.
+Sessions are listed under a title written by Apple's on-device model: no key,
+no bill, nothing leaves the machine. It needs Apple Intelligence turned on;
+without it, each session is listed under its opening message instead.
+`titles = "off"` in the config file does that on purpose, which is what Bright
+Lantern did for its first five milestones.
 
 ## The archive
 

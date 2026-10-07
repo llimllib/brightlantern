@@ -168,9 +168,9 @@ what a person types. On the corpus that was 1600 of 1617 files and 283 of
 | `cli` | **17** | someone typing |
 
 The bridge files duplicate the pi corpus, with the worse copy. The title files
-are a **feedback loop**: the titles pass shells out to `claude -p`, which writes
-a session into the directory being indexed, which gets indexed and titled, which
-writes another.
+were a **feedback loop** while titles could come from `claude -p`, which wrote
+a session into the directory being indexed, which got indexed and titled, which
+wrote another. That backend is gone (#91); the filter stays for the bridge.
 
 `session.SkipReason` filters on `entrypoint`, which is present on every
 message-bearing record across every version seen. **Whole file, not a prefix**:
@@ -206,9 +206,8 @@ default" -- otherwise `--addr` with the default value could not override a file.
 `resolve` is handed the set of flags the FlagSet saw.
 
 A first run writes down what it detected, because detection's answer moves:
-install pi to try it once and the corpus doubles. It records `titles = "api"`,
-which is what brightlantern already did -- writing `off` would quietly stop titling
-for someone who has a key and has been getting them.
+install pi to try it once and the corpus doubles. It records `titles = "apple"`:
+on-device, so there is nobody to ask before using it.
 
 XDG, not `~/Library/Application Support`, matching `BRIGHTLANTERN_DATA_DIR` and
 `embed.DefaultPaths`.
@@ -489,8 +488,7 @@ registers the same job (#74), and it must never change.
   would detect session directories in launchd's environment and write that
   answer down for good.
 - **No `EnvironmentVariables`.** The plist gets pasted into issues, and
-  `apple` titles need nothing from the environment. `api` and `claude` do not
-  work under launchd, and `install` says so rather than working around it.
+  titles, being on-device, need nothing from the environment.
 - Logs go to `~/Library/Logs/brightlantern/brightlantern.log`, both streams in
   one file: every `note()` is stderr and the startup line is stdout, and they
   only make sense interleaved. Nothing rotates it; `serve` is quiet.
@@ -592,25 +590,23 @@ testing one beside the other.
 
 `sessions.title` is written by `internal/titles`, a pass that runs *after* a
 build and never during one: both write, and the writer is one connection.
-Without a backend the pass is skipped with a note and every row falls back to
-its opening message, which is what the list did for five milestones.
+When Apple Intelligence is unavailable the pass is skipped with a note and
+every row falls back to its opening message, which is what the list did for
+five milestones.
 
-Three backends, chosen with `--titles-via`:
+**One backend: Apple's on-device model** (#91), through `brightlantern-apple`,
+a Swift helper in `cmd/brightlantern-apple` built by `mise run apple` with
+plain `swiftc` -- FoundationModels is in the Command Line Tools SDK, so no
+Xcode. Measured on 200 sessions as a LaunchAgent: 199 titled, 1 declined, no
+rate limiting, 1.66s a title at `AppleConcurrency` 2 -- four is no faster, the
+model is local. Quality is moderately below Haiku and was accepted for that
+(#84).
 
-- `apple`, the default, is Apple's on-device model through
-  `brightlantern-apple`, a Swift helper in `cmd/brightlantern-apple` built by
-  `mise run apple` with plain `swiftc` -- FoundationModels is in the Command
-  Line Tools SDK, so no Xcode. No key, no bill, no network, no PATH, which
-  makes it **the only backend that works under launchd** (#70). Measured on 200
-  sessions as a LaunchAgent: 199 titled, 1 declined, no rate limiting, 1.66s a
-  title at `AppleConcurrency` 2 -- four is no faster, the model is local.
-  Quality is moderately below Haiku and was accepted for that (#84).
-- `api` needs `ANTHROPIC_API_KEY`, and `ANTHROPIC_BASE_URL` points it at a fake
-  or a gateway. ~1s a call.
-- `claude` shells out to `claude -p`, which bills whatever authentication
-  Claude Code has, including a Pro or Max subscription. ~4.5s a call, nearly
-  all of it starting Node, so `CLIConcurrency` is 4 rather than 8 -- and its
-  rate limit is shared with the interactive sessions the subscription is for.
+There were also `api` and `claude`. Neither worked under launchd, which has no
+`ANTHROPIC_API_KEY` and no PATH that finds `claude` (#70), and launchd is how
+the app runs the daemon; making them work meant a key file, a resolved binary
+path and a picker. They were removed instead, and nothing leaves the machine.
+A config still saying `api` or `claude` is read as `apple`, with a note.
 
 The helper is a separate process, not cgo: a crash in cgo cannot be recovered
 (see sqlite-lembed), and a crashed helper costs one title. It takes the
@@ -630,20 +626,11 @@ session checked like one with no prose. A failure records nothing and retries,
 which for a refusal would mean asking again after every change the watcher
 sees. `rateLimited` and everything else stay failures.
 
-There is no `auto`. Picking the CLI because no API key was set would spend a
-subscription's rate limit on a thousand sessions without being asked; the
-missing-key note names the flag instead.
-
-The CLI runs in an empty temp directory with `--strict-mcp-config
---setting-sources ""`. In a project it discovers CLAUDE.md, settings and
-plugins, all to write eight words.
-
 The instructions are repeated **after** the transcript, which is fenced on both
-sides. Everything is one message there, the slice is cut at 10k characters, and
-without the closing half a transcript ending mid-sentence drew *"Your message
-cuts off mid-sentence. Could you complete the question?"* as a title. Passing
-them via `--system-prompt` is worse still: it replaces Claude Code's own, and
-the model answers the transcript instead of titling it.
+sides, even though the helper passes them separately as well. The slice is cut
+at 10k characters, and without the closing half a transcript ending
+mid-sentence drew *"Your message cuts off mid-sentence. Could you complete the
+question?"* as a title, back when everything went as one message.
 
 Two columns decide whether a session is paid for again, and they guard
 different costs:
@@ -665,8 +652,8 @@ with no prose at all settles without ever getting a title.
 Both columns are added by `addColumns()` (`ALTER TABLE ADD COLUMN`), not by
 `schema`, because they predate migrations -- see "Migrations".
 
-`--titles N` caps a run. The corpus is on the order of a dollar all at once, so
-a trial run over the newest few is worth having.
+`--titles N` caps a run, which is useful for watching a few titles appear
+before committing a cold corpus to half an hour of the on-device model.
 
 ## Query syntax
 

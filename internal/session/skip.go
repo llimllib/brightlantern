@@ -37,8 +37,8 @@ var entrypointCLI = []byte("cli")
 //     conversation a second time, as sdk-ts. Indexing it duplicates the pi
 //     corpus, and with the worse copy: pi's file carries the rendered diff, the
 //     bridged one only structuredPatch.
-//   - **brightlantern's own title prompts.** The titles pass shells out to
-//     `claude -p`, which writes a session file. Index the directory it writes
+//   - **brightlantern's own title prompts**, from before #91 removed the
+//     `claude -p` backend, which wrote a session file per title. Index the directory it writes
 //     into and the next build indexes that file, generates a title for it, and
 //     writes another. On the corpus this was measured at 1215 files and 148MB
 //     of transcripts of brightlantern asking for titles.

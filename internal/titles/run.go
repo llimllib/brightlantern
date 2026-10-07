@@ -10,10 +10,9 @@ import (
 
 // DefaultConcurrency is how many summaries are in flight at once.
 //
-// The work is entirely latency: a request takes a second or two and the
-// process does nothing while it waits. Eight keeps a thousand sessions to a
-// few minutes without being the reason an account hits its rate limit -- and
-// when it does, the client backs off rather than the pass failing.
+// What a Summarizer gets when ConcurrencyFor has nothing better to say,
+// which since #91 means a test's stub: the on-device model runs at
+// AppleConcurrency.
 const DefaultConcurrency = 8
 
 // ErrDeclined is wrapped by a Summarizer whose model refused this input and

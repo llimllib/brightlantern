@@ -26,14 +26,12 @@ const (
 
 // Apple summarizes with Apple's on-device Foundation Models.
 //
-// The reason to want it is everything it does not need: no key to keep, no
-// bill, no network, and no PATH -- which is what makes it the backend that
-// works under launchd, where neither ANTHROPIC_API_KEY nor claude can be
-// found (#70). Measured on 25 sessions from a real corpus (#84): no failures,
+// The only backend (#91). It needs no key, no bill, no network and no PATH,
+// which is what makes it work under launchd (#70). Measured on 25 sessions from a real corpus (#84): no failures,
 // median 2.6s a title, quality moderately below Haiku -- more generic, fewer
 // ticket numbers and library names -- and never wrong.
 //
-// A process per title, like the claude backend, rather than linking the
+// A process per title rather than linking the
 // framework in through cgo: a crash in there would take the daemon with it.
 type Apple struct {
 	// Bin is the helper's path.
@@ -86,9 +84,9 @@ func (a *Apple) Summarize(ctx context.Context, slice string) (string, error) {
 		return "", fmt.Errorf("empty session")
 	}
 
-	// The system prompt as instructions, which this model -- unlike claude -p
-	// -- takes separately and honours. The transcript is still fenced and
-	// followed by the instruction, for the same reason as there: a slice cut
+	// The system prompt as instructions, which this model takes separately
+	// and honours. The transcript is still fenced and followed by the
+	// instruction anyway: a slice cut
 	// at 10k characters usually ends mid-sentence, and a small model is more
 	// inclined than a large one to answer the last thing it read.
 	req, err := json.Marshal(appleRequest{

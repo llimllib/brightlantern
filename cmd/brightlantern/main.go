@@ -2,7 +2,6 @@
 package main
 
 import (
-	"bufio"
 	"context"
 	"errors"
 	"flag"
@@ -58,10 +57,6 @@ flags:
   --log PATH     append stdout and stderr to PATH; ~ is expanded
   --no-titles    do not generate session titles (same as titles = "off")
   --titles N     stop after generating N titles (0 for no limit)
-  --titles-via   apple (Apple's on-device model: no key, no bill),
-                 claude (the Claude Code CLI, which bills a Pro/Max
-                 subscription), or api (ANTHROPIC_API_KEY). Defaults to the
-                 settings file's titles value.
 `
 
 // command splits the subcommand from its flags, defaulting to serve.
@@ -102,7 +97,6 @@ func main() {
 	// possible -- newest sessions first, so it titles what is worth looking at
 	// -- before committing to all eleven hundred.
 	titleLimit := fs.Int("titles", 0, "stop after generating N titles")
-	titleVia := fs.String("titles-via", titles.BackendApple, "apple, claude or api")
 	fs.Usage = func() { fmt.Fprintf(os.Stderr, usage, index.DefaultPath()) }
 
 	var err error
@@ -116,14 +110,14 @@ func main() {
 				note("could not log to %s: %v", *logPath, lerr)
 			}
 		}
-		if s, serr := resolve(givenFlags(fs), dirs, *dbPath, *addr, *titleVia); serr != nil {
+		if s, serr := resolve(givenFlags(fs), dirs, *dbPath, *addr); serr != nil {
 			err = serr
 		} else {
 			err = runServe(s.dbPath, s.addr, s.dirs, *dev, *openBrowser, *noWatch, *wait, s.titles)
 		}
 	case "index":
 		_ = fs.Parse(args)
-		if s, serr := resolve(givenFlags(fs), dirs, *dbPath, *addr, *titleVia); serr != nil {
+		if s, serr := resolve(givenFlags(fs), dirs, *dbPath, *addr); serr != nil {
 			err = serr
 		} else if cerr := checkNoWriter(s.addr, s.dbPath); cerr != nil && !*force {
 			err = cerr
@@ -391,64 +385,9 @@ func runMerge(dbPath, other string, lexical bool) error {
 	return nil
 }
 
-// summarizer builds the title generator for the chosen backend.
-func summarizer(via string) (titles.Summarizer, error) {
-	return titles.NewSummarizer(via)
-}
-
-// confirmThreshold is how many sessions make a CLI run worth asking about.
-// Below it the pass is quick and cheap enough that a prompt is just friction.
-const confirmThreshold = 50
-
-// confirmCLIRun asks before titling a large corpus through the Claude CLI.
-//
-// Only for that backend, and only when a person is there to answer. Using the
-// API means someone deliberately set ANTHROPIC_API_KEY, which is its own
-// opt-in; the CLI spends a subscription's rate limit, shared with the
-// interactive sessions it is actually for, and AGENTS.md's rule against an
-// "auto" backend is the same concern one step earlier.
-//
-// Not a tty means proceed: the backend was named on the command line or in the
-// settings file, and a prompt nobody can answer would hang a cron job or a
-// brew service rather than protect anyone.
-func confirmCLIRun(ctx context.Context, db *index.DB, via string, limit int) (bool, error) {
-	if via != titles.BackendClaude || !isTerminal(os.Stdin) {
-		return true, nil
-	}
-	cands, err := db.TitleCandidates(ctx)
-	if err != nil {
-		return false, err
-	}
-	n := len(cands)
-	if limit > 0 && limit < n {
-		n = limit
-	}
-	if n < confirmThreshold {
-		return true, nil
-	}
-
-	// "Up to", because a session whose conversation has not moved much since
-	// it was last titled is answered from title_key without a call.
-	fmt.Printf("%d sessions to title through the claude CLI: up to %d calls against your\n"+
-		"subscription's rate limit, roughly %s. Continue? [y/N] ",
-		n, n, (time.Duration(n) * 4500 * time.Millisecond / time.Duration(titles.CLIConcurrency)).Round(time.Minute))
-
-	line, err := bufio.NewReader(os.Stdin).ReadString('\n')
-	if err != nil {
-		return false, nil
-	}
-	switch strings.ToLower(strings.TrimSpace(line)) {
-	case "y", "yes":
-		return true, nil
-	}
-	return false, nil
-}
-
-// isTerminal reports whether f is a terminal, so that prompts are only asked
-// where they can be answered.
-func isTerminal(f *os.File) bool {
-	fi, err := f.Stat()
-	return err == nil && fi.Mode()&os.ModeCharDevice != 0
+// summarizer builds the title generator.
+func summarizer() (titles.Summarizer, error) {
+	return titles.NewSummarizer()
 }
 
 // runTitles generates titles for sessions that do not have one.
@@ -458,15 +397,12 @@ func isTerminal(f *os.File) bool {
 // are an improvement to the list, and an index without them is the index this
 // tool had for its first five milestones.
 func runTitles(ctx context.Context, db *index.DB, limit int, via string) error {
-	s, err := summarizer(via)
-	if err != nil {
-		note("skipping titles: %v", err)
+	if via == config.TitlesOff {
 		return nil
 	}
-	if ok, err := confirmCLIRun(ctx, db, via, limit); err != nil {
-		return err
-	} else if !ok {
-		note("skipping titles; set titles in %s to choose once", config.Path())
+	s, err := summarizer()
+	if err != nil {
+		note("skipping titles; the list shows opening messages instead: %v", err)
 		return nil
 	}
 
@@ -708,7 +644,7 @@ func runInit() error {
 		fmt.Println("already configured:", config.Path())
 		return nil
 	}
-	if _, err := resolve(map[string]bool{}, nil, index.DefaultPath(), config.DefaultAddr, titles.BackendApple); err != nil {
+	if _, err := resolve(map[string]bool{}, nil, index.DefaultPath(), config.DefaultAddr); err != nil {
 		return err
 	}
 	// resolve treats a failed write as a note, because serve works without the
@@ -763,7 +699,7 @@ type settings struct {
 // every time, and the answer changes -- install pi to try it once and the
 // corpus silently doubles, move ~/.claude and the index empties with no
 // explanation. Written down, it is something a person can read and edit.
-func resolve(given map[string]bool, flagged dirList, dbPath, addr, titleVia string) (settings, error) {
+func resolve(given map[string]bool, flagged dirList, dbPath, addr string) (settings, error) {
 	cfg, hadFile, err := config.Load()
 	if err != nil {
 		// Named rather than ignored: falling back to detection would quietly
@@ -786,11 +722,16 @@ func resolve(given map[string]bool, flagged dirList, dbPath, addr, titleVia stri
 	switch {
 	case given["no-titles"]:
 		s.titles = config.TitlesOff
-	case given["titles-via"]:
-		s.titles = titleVia
-	case cfg.Titles != "":
-		s.titles = cfg.Titles
+	case cfg.Titles == config.TitlesOff:
+		s.titles = config.TitlesOff
+	case cfg.Titles == "" || cfg.Titles == config.TitlesApple:
+		s.titles = config.TitlesApple
 	default:
+		// "api" and "claude" were backends until #91, and a first run wrote
+		// them into this file. Read as apple rather than refused: the file
+		// is ours, and the person who chose one wanted titles.
+		note("titles = %q in %s is no longer a backend; using apple, Apple's on-device model",
+			cfg.Titles, config.Path())
 		s.titles = config.TitlesApple
 	}
 
