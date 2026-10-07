@@ -1,15 +1,17 @@
 // Bright Lantern.app: a window showing the daemon's web interface.
 //
-// A client, not a host. The LaunchAgent from M13 is already running and
-// already indexing; this shows it without browser chrome. Nothing here
-// starts or stops the daemon: address.swift finds where it listens, and
-// startup.swift decides what to say while it is not answering.
+// A client, not a host. The daemon runs under launchd, not under the app,
+// and goes on indexing with no window open. The app registers it to run at
+// login (agent.swift, register.swift; #74) but never starts or stops it
+// itself: address.swift finds where it listens, and startup.swift decides
+// what to say while it is not answering.
 //
 // Built with plain swiftc from Command Line Tools: `mise run app`, into
 // build/Bright Lantern.app. docs/plans/2026-10-06-wkwebview-shell-design.md
 // has the reasoning.
 
 import AppKit
+import ServiceManagement
 import WebKit
 
 @MainActor
@@ -49,7 +51,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate {
         NSApp.activate()
 
         startProbing()
+        // Alongside the probe rather than before it: the window has nothing
+        // to wait for but the daemon, and "starting" is true while the agent
+        // is being registered too.
+        Task {
+            let problem = await Task.detached { await ensureAgent() }.value
+            self.agentProblem = problem
+        }
     }
+
+    // Set when the agent cannot run, and shown instead of the startup pages.
+    private var agentProblem: AgentProblem?
 
     // MARK: Waiting for the daemon (#75)
 
@@ -58,12 +70,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate {
     // wait without leaving a second loop running behind it.
     private var probeGeneration = 0
     private var probeStarted = Date()
-    private var shown = Startup.quiet
+    private var shownPage: String?
 
     private func startProbing() {
         probeGeneration += 1
         probeStarted = Date()
-        shown = .quiet
+        shownPage = nil
         probe(probeGeneration)
     }
 
@@ -88,12 +100,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate {
             web.load(URLRequest(url: url))
             return
         }
+        // A problem with the agent outranks "starting": it says why nothing
+        // will start, which waiting would not.
+        let page = agentProblem.map(problemPage)
+            ?? startupPage(state, address: displayAddress, log: logPath())
         // Only on a change: reloading the same page every half second would
         // flicker and lose any text someone had selected to copy.
-        if state != shown, let page = startupPage(state, address: displayAddress, log: logPath()) {
+        if let page, page != shownPage {
             web.loadHTMLString(page, baseURL: nil)
+            shownPage = page
         }
-        shown = state
         // Quickly while it is plausibly starting, so the page appears as soon
         // as it can; slowly once it has been long enough to be stuck.
         let interval: Duration = state == .stuck ? .seconds(2) : .milliseconds(500)
@@ -166,6 +182,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate {
         return Self.zoomSteps.contains(CGFloat(z)) ? CGFloat(z) : 1
     }
 
+    // The approval page's button. Opening Login Items is all it can do: the
+    // switch is the user's, and once they turn it on launchd starts the
+    // daemon and the probe loads the page.
+    func webView(_ webView: WKWebView, decidePolicyFor action: WKNavigationAction,
+                 decisionHandler: @escaping @MainActor (WKNavigationActionPolicy) -> Void) {
+        if action.request.url?.absoluteString == loginItemsURL {
+            decisionHandler(.cancel)
+            SMAppService.openSystemSettingsLoginItems()
+            return
+        }
+        decisionHandler(.allow)
+    }
+
     // MARK: Failed loads
 
     // A daemon that answered the probe can still be gone by the time the
@@ -201,15 +230,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate {
         default:
             why = e.localizedDescription
         }
-        // NSLog rather than print: it reaches stderr when run from a
-        // terminal and the unified log when launched from the Dock, where
-        // stderr goes nowhere.
-        NSLog("loading %@: %@ (%@ %d)", url.absoluteString, why, e.domain, e.code)
+        // say() rather than print: launched from the Dock, stderr goes
+        // nowhere. See log.swift.
+        say("loading \(url.absoluteString): \(why) (\(e.domain) \(e.code))")
     }
 }
 
 let config = try? String(contentsOfFile: configPath(), encoding: .utf8)
-let url = resolveURL(arguments: CommandLine.arguments, config: config) { NSLog("%@", $0) }
+let url = resolveURL(arguments: CommandLine.arguments, config: config) { say($0) }
 
 // Top-level code runs on the main thread but is not main-actor isolated,
 // and AppKit is. assumeIsolated says the first, and traps if it is ever false.

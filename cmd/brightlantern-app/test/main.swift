@@ -118,6 +118,46 @@ check(startupPage(.starting, address: "<script>", log: "l")?.contains("<script>"
       "the address comes from a file someone edits, so it is escaped")
 check(logPath(home: "/Users/x"), "/Users/x/Library/Logs/brightlantern/brightlantern.log", "service.go's log")
 
+// agentPlan (#74)
+
+func facts(config: Bool = true, legacy: Bool = false, _ status: AgentStatus,
+           now: String? = "h1", registered: String? = "h1") -> AgentFacts {
+    AgentFacts(hasConfig: config, legacyInstalled: legacy, status: status,
+               daemonHash: now, registeredHash: registered)
+}
+
+check(agentPlan(facts(.notRegistered, registered: nil)), [.register], "first launch with a config")
+check(agentPlan(facts(config: false, .notRegistered, registered: nil)), [.writeConfig, .register],
+      "first launch: config before the agent, so the daemon never detects under launchd")
+check(agentPlan(facts(.notFound)), [.register], "notFound registers like notRegistered")
+check(agentPlan(facts(.enabled)), [], "registered and unchanged: nothing, every launch after the first")
+check(agentPlan(facts(.enabled, now: "h2")), [.reregister], "a rebuilt or upgraded daemon is re-registered")
+check(agentPlan(facts(.enabled, registered: nil)), [.reregister],
+      "registered by some earlier build that recorded nothing")
+check(agentPlan(facts(.enabled, now: nil)), [], "an unreadable daemon is no evidence of a change")
+check(agentPlan(facts(.requiresApproval, now: "h2")), [.needsApproval],
+      "turned off in Login Items: never registered over, even after an upgrade")
+check(agentPlan(facts(legacy: true, .notRegistered)), [.removeLegacy, .register],
+      "an M13 agent goes before registering the same label")
+check(agentPlan(facts(config: false, legacy: true, .notRegistered)), [.writeConfig, .removeLegacy, .register],
+      "all three, in order")
+check(agentPlan(facts(legacy: true, .enabled)), [.removeLegacy, .reregister],
+      "removing an M13 agent stops ours too, unchanged daemon or not")
+
+check(legacyPlistPath(home: "/Users/x"), "/Users/x/Library/LaunchAgents/org.billmill.brightlantern.plist",
+      "service.go's plist")
+
+let m = "__m__"
+check(shellVariable("\n\(m)/Users/x/.cc", marker: m), "/Users/x/.cc", "the value after the marker")
+check(shellVariable("Welcome!\nlast login\n\(m)/a b\n", marker: m), "/a b", "rc noise before it, newline after")
+check(shellVariable("\n\(m)", marker: m), nil, "unset")
+check(shellVariable("killed before printing", marker: m), nil, "no marker")
+
+check(problemPage(.needsApproval).contains("href=\"\(loginItemsURL)\""), true,
+      "the approval page links where the delegate intercepts")
+check(problemPage(.firstRun("<no sessions>")).contains("<no sessions>"), false, "init's message is escaped")
+check(problemPage(.failed("boom")).contains("boom"), true, "a failure says what failed")
+
 if failures > 0 {
     print("\(failures) failed")
     exit(1)

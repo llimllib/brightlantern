@@ -149,6 +149,16 @@ func serviceInstall(p servicePaths) error {
 			cfg.Titles, config.Path())
 	}
 
+	// Before writing anything: installing boots out the label, which with
+	// the app's agent loaded stops it, and then bootstrap fails because
+	// SMAppService still holds the label -- leaving nothing running. Seen, on
+	// the one machine, and worse than that: see managedByApp.
+	if managedByApp(launchctlPrint()) {
+		return errors.New("brightlantern already runs at login through Bright Lantern.app; " +
+			"to use this install instead, turn Bright Lantern off in " +
+			"System Settings > General > Login Items first")
+	}
+
 	program, err := agentProgram()
 	if err != nil {
 		return err
@@ -197,6 +207,16 @@ func agentProgram() (string, error) {
 }
 
 func serviceUninstall(p servicePaths) error {
+	// Removing a stray plist is all this may do to the app's agent. The app
+	// runs it to clear an M13 install before registering its own (#74).
+	if managedByApp(launchctlPrint()) {
+		if err := os.Remove(p.plist); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return err
+		}
+		fmt.Println("Bright Lantern.app runs brightlantern at login, and is left alone; " +
+			"to stop it, turn Bright Lantern off in System Settings > General > Login Items")
+		return nil
+	}
 	_ = launchctlQuiet("bootout", serviceTarget())
 	if err := os.Remove(p.plist); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return err
@@ -239,9 +259,37 @@ func serviceStatus(p servicePaths, addr string) error {
 }
 
 var (
-	launchctlStateRe = regexp.MustCompile(`(?m)^\s*state = (\S+)`)
-	launchctlPIDRe   = regexp.MustCompile(`(?m)^\s*pid = (\d+)`)
+	launchctlStateRe   = regexp.MustCompile(`(?m)^\s*state = (\S+)`)
+	launchctlPIDRe     = regexp.MustCompile(`(?m)^\s*pid = (\d+)`)
+	launchctlManagedRe = regexp.MustCompile(`(?m)^\s*managed_by = com\.apple\.xpc\.ServiceManagement\s*$`)
 )
+
+// launchctlPrint is `launchctl print` for the label, or "" when nothing is
+// loaded. A variable so tests need no launchd.
+var launchctlPrint = func() string {
+	out, err := exec.Command("launchctl", "print", serviceTarget()).CombinedOutput()
+	if err != nil {
+		return ""
+	}
+	return string(out)
+}
+
+// managedByApp reports whether the loaded job is Bright Lantern.app's, which
+// SMAppService registered (#74), rather than one service install bootstrapped.
+//
+// Such a job must never be booted out by hand. smd submits it to launchd with
+// the bundle's location, which is how launchd resolves the plist's relative
+// BundleProgram; after manual bootouts and a registration through the app,
+// launchd held a "partial import" without it and failed every spawn with
+// "Could not find and/or execute program specified by service ...
+// Contents/MacOS/brightlantern". Unregistering and registering again did not
+// repair it.
+//
+// managed_by rather than the program path, which launchctl does not print for
+// these jobs: they have "program identifier = Contents/MacOS/brightlantern".
+func managedByApp(launchctlOutput string) bool {
+	return launchctlManagedRe.MatchString(launchctlOutput)
+}
 
 // launchctlState pulls the state and pid out of `launchctl print`, whose
 // format Apple documents as unstable -- so only the two lines that have been
@@ -271,6 +319,7 @@ func launchctl(args ...string) error {
 	return nil
 }
 
-func launchctlQuiet(args ...string) error {
+// A variable so tests can see that nothing was booted out.
+var launchctlQuiet = func(args ...string) error {
 	return exec.Command("launchctl", args...).Run()
 }

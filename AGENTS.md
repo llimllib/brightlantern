@@ -523,6 +523,68 @@ bundled daemon run from a mise shell uses the data directory, not the bundle.
 Run it with `env -u BRIGHTLANTERN_DATA_DIR` to see what launchd will;
 `brightlantern info` prints the extension, model and helper it resolved.
 
+## Registering from the app
+
+Opening the app is the whole install: it registers
+`Contents/Library/LaunchAgents/org.billmill.brightlantern.plist` with
+`SMAppService`, and the daemon runs at login with nobody having opened a
+terminal (#74, `docs/plans/2026-10-07-register-agent-design.md`). The decision
+is `agentPlan` in `agent.swift`, free of ServiceManagement so `app-test`
+covers it; `register.swift` carries it out. Registration itself has no test:
+it needs a login session, which a sandbox cannot reach -- every status
+answers `notFound` there.
+
+- **Config first.** With no `config.toml`, the app runs the bundled
+  `brightlantern init` before registering, the rule `service install`
+  enforces by refusing. An app opened from Finder has launchd's environment,
+  so it passes `CLAUDE_CONFIG_DIR` from `$SHELL -l -i`, the one thing
+  detection reads that launchd loses.
+- **Never `launchctl bootout` the app's agent.** After two manual bootouts
+  of the label -- a `service install` over it, then the app clearing that
+  install -- launchd held the job as a `partial import` without the bundle's
+  location, and every spawn failed with exit 78 and "Could not find and/or
+  execute program specified by service ... Contents/MacOS/brightlantern":
+  `BundleProgram` is relative and resolves only through the bundle smd
+  submitted. Unregistering and registering again, even with a new BTM
+  record, did not repair it; logging out and back in did, launchd
+  rebuilding the job from the BTM records. `managedByApp` spots such a job by
+  `managed_by = com.apple.xpc.ServiceManagement` -- `launchctl print` has no
+  `program =` line for one -- and `service install` and `uninstall` both
+  leave it alone.
+- **When the agent will not start, ask launchd why.** `launchctl print`
+  says *that* a spawn failed; `log show --predicate 'process == "launchd"
+  AND eventMessage CONTAINS "brightlantern"'` says why. `needs LWCR update`
+  in `properties` looked like the cause and was not. `sudo sfltool dumpbtm`
+  shows the BTM records, writing every home as `/Users/<uid>`.
+- **Signed with a Developer ID, even in development.** SMAppService records
+  the agent's executable in a launch constraint (`LWCR`), by cdhash when the
+  signature is ad-hoc, and every rebuild changes the cdhash. Whether that
+  breaks a rebuilt daemon was never cleanly tested; a Developer ID gives the
+  constraint a team instead. `--timestamp=none`, because the timestamp
+  server is network and only notarization needs it.
+- **Re-registered when the daemon's SHA-256 changes**, not
+  `CFBundleVersion`: `mise run app` rebuilds the daemon at the same version,
+  and `SMAppService.h` says a changed executable "may not launch" until
+  re-registered. The hash is in the app's UserDefaults.
+- **`requiresApproval` is never registered over.** It means someone turned it
+  off in Login Items; the window says so and links there.
+- **An M13 agent is replaced**, through the bundled `service uninstall`,
+  and always followed by a registration: when the M13 job was the one
+  loaded, booting it out leaves nothing running. `register()` straight after
+  it was refused once with "Operation not permitted", so it retries. The
+  other way round, `service install` refuses while the app's agent is
+  loaded.
+- **`say()`, not `NSLog`.** NSLog from the app never reached the unified
+  log. `log show --predicate 'subsystem == "org.billmill.brightlantern"'`
+  reads what it did.
+- **`serve --log`, not `StandardOutPath`.** The plist is signed and the same
+  for everyone, and launchd does not expand `~`. `--log` expands it and
+  `dup2`s the file over fds 1 and 2, so panics and llama.cpp land there too.
+
+Two bundles with this identifier -- `build/` and `/Applications` -- register
+the same label, and whichever launched last wins. Worth knowing before
+testing one beside the other.
+
 ## Titles
 
 `sessions.title` is written by `internal/titles`, a pass that runs *after* a

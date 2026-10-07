@@ -78,7 +78,7 @@ description = "Build build/Bright Lantern.app"
 depends = ["build", "setup"]
 sources = [
   "cmd/brightlantern-app/*.swift",
-  "cmd/brightlantern-app/Info.plist",
+  "cmd/brightlantern-app/*.plist",
   "brightlantern",
   "{{env.BRIGHTLANTERN_DATA_DIR}}/brightlantern-apple",
   "{{env.BRIGHTLANTERN_DATA_DIR}}/lembed0.dylib",
@@ -88,23 +88,37 @@ outputs = ["build/Bright Lantern.app/Contents/MacOS/brightlantern-app", "build/B
 run = '''
 if [ "$(uname)" != Darwin ]; then echo "app: not macOS, skipping"; exit 0; fi
 command -v swiftc >/dev/null || { echo "app: no swiftc; install Command Line Tools: xcode-select --install" >&2; exit 1; }
-plutil -lint -s cmd/brightlantern-app/Info.plist
+plutil -lint -s cmd/brightlantern-app/*.plist
 contents="build/Bright Lantern.app/Contents"
-mkdir -p "$contents/MacOS" "$contents/Resources"
+mkdir -p "$contents/MacOS" "$contents/Resources" "$contents/Library/LaunchAgents"
 cp cmd/brightlantern-app/Info.plist "$contents/Info.plist"
-swiftc -O -target arm64-apple-macos26.0 -o "$contents/MacOS/brightlantern-app" cmd/brightlantern-app/main.swift cmd/brightlantern-app/menu.swift cmd/brightlantern-app/address.swift cmd/brightlantern-app/startup.swift
+# The agent SMAppService registers (#74). The app looks for it by this name.
+cp cmd/brightlantern-app/org.billmill.brightlantern.plist "$contents/Library/LaunchAgents/"
+swiftc -O -target arm64-apple-macos26.0 -o "$contents/MacOS/brightlantern-app" cmd/brightlantern-app/main.swift cmd/brightlantern-app/menu.swift cmd/brightlantern-app/address.swift cmd/brightlantern-app/startup.swift cmd/brightlantern-app/agent.swift cmd/brightlantern-app/register.swift cmd/brightlantern-app/log.swift
 cp brightlantern "$BRIGHTLANTERN_DATA_DIR/brightlantern-apple" "$BRIGHTLANTERN_DATA_DIR/lembed0.dylib" "$contents/MacOS/"
 cp "$BRIGHTLANTERN_DATA_DIR/all-MiniLM-L6-v2.Q8_0.gguf" "$contents/Resources/"
+# A Developer ID when the keychain has one. SMAppService records the agent's
+# executable in a launch constraint (LWCR in `launchctl print`), and for an
+# ad-hoc signature the only thing to record is its cdhash, which every rebuild
+# changes; a Developer ID gives it a team. Whether ad-hoc breaks on a rebuild
+# was never cleanly tested (#74), and this removes the question. No timestamp,
+# which needs Apple's server and only notarization wants; no hardened
+# runtime, which is #78's. BRIGHTLANTERN_SIGN_IDENTITY overrides; "-" forces
+# ad-hoc.
+identity="${BRIGHTLANTERN_SIGN_IDENTITY:-$(security find-identity -v -p codesigning 2>/dev/null | sed -n 's/.*"\(Developer ID Application: .*\)"/\1/p' | head -1)}"
+if [ -z "$identity" ] || [ "$identity" = - ]; then
+  identity=-
+  echo "app: no Developer ID in the keychain; signing ad-hoc" >&2
+fi
 # Nested code first, then the bundle: signing the bundle seals the hashes of
 # what is inside it, and does not sign it. The linker ad-hoc signs the app's
 # executable alone, under its file name and with Info.plist unbound; sealing
 # the bundle puts the signature under the bundle identifier, which is what
-# privacy permissions attach to. Ad-hoc only: the Developer ID is for releases
-# (#78).
+# privacy permissions attach to.
 for f in brightlantern brightlantern-apple lembed0.dylib; do
-  codesign --force --sign - "$contents/MacOS/$f"
+  codesign --force --timestamp=none --sign "$identity" "$contents/MacOS/$f"
 done
-codesign --force --sign - "build/Bright Lantern.app"
+codesign --force --timestamp=none --sign "$identity" "build/Bright Lantern.app"
 codesign --verify --strict --deep "build/Bright Lantern.app"
 '''
 
@@ -114,7 +128,7 @@ run = '''
 if [ "$(uname)" != Darwin ]; then echo "app-test: not macOS, skipping"; exit 0; fi
 command -v swiftc >/dev/null || { echo "app-test: no swiftc; install Command Line Tools: xcode-select --install" >&2; exit 1; }
 mkdir -p build
-swiftc -target arm64-apple-macos26.0 -o build/app-test cmd/brightlantern-app/address.swift cmd/brightlantern-app/startup.swift cmd/brightlantern-app/test/main.swift
+swiftc -target arm64-apple-macos26.0 -o build/app-test cmd/brightlantern-app/address.swift cmd/brightlantern-app/startup.swift cmd/brightlantern-app/agent.swift cmd/brightlantern-app/test/main.swift
 build/app-test
 '''
 

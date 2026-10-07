@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- The LaunchAgent the app registers with SMAppService (#74), copied to
+     Contents/Library/LaunchAgents by `mise run app`. service.go's agentPlist
+     is the same job for anyone without the app; the label is shared on
+     purpose, so the two cannot run side by side, and must never change.
+
+     BundleProgram is relative to the bundle, so the app can be moved. The log
+     is an argument rather than StandardOutPath because this file is signed
+     and the same for everyone, and launchd does not expand ~: serve --log
+     does. -->
+<plist version="1.0">
+<dict>
+	<key>Label</key>
+	<string>org.billmill.brightlantern</string>
+	<key>BundleProgram</key>
+	<string>Contents/MacOS/brightlantern</string>
+	<key>ProgramArguments</key>
+	<array>
+		<string>brightlantern</string>
+		<string>serve</string>
+		<string>--wait</string>
+		<string>--log</string>
+		<string>~/Library/Logs/brightlantern/brightlantern.log</string>
+	</array>
+	<key>RunAtLoad</key>
+	<true/>
+	<key>KeepAlive</key>
+	<true/>
+	<!-- So Login Items names Bright Lantern rather than a bare executable. -->
+	<key>AssociatedBundleIdentifiers</key>
+	<string>org.billmill.brightlantern</string>
+</dict>
+</plist>

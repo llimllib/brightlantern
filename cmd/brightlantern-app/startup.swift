@@ -69,12 +69,46 @@ func startupPage(_ state: Startup, address: String, log: String) -> String? {
             <h1>Bright Lantern is not answering</h1>
             <p>Nothing has answered at \(escape(address)) for thirty seconds.
             This window will load the moment something does.</p>
-            <p>If it runs at login, <code>brightlantern service status</code>
-            says what it is doing, and its log is
-            <code>\(escape(log))</code>.</p>
+            <p>Its log is <code>\(escape(log))</code>.</p>
             """
     }
-    return """
+    return page(body)
+}
+
+// loginItemsURL is what the approval page's button navigates to. The web
+// view's delegate cancels it and opens Login Items instead.
+let loginItemsURL = "brightlantern:login-items"
+
+// problemPage says why the agent is not running, instead of "starting" (#74).
+func problemPage(_ problem: AgentProblem) -> String {
+    let body: String
+    switch problem {
+    case .firstRun(let message):
+        body = """
+            <h1>Bright Lantern found no sessions</h1>
+            <p>It looks for Claude Code and pi sessions on this Mac, and
+            found none. Once there are some, open Bright Lantern again.</p>
+            <pre>\(escape(message))</pre>
+            """
+    case .needsApproval:
+        body = """
+            <h1>Bright Lantern is turned off in Login Items</h1>
+            <p>It needs to run in the background to keep its index of your
+            sessions current. Turn it on in System Settings, and this window
+            will load.</p>
+            <p><a href="\(loginItemsURL)">Open Login Items</a></p>
+            """
+    case .failed(let message):
+        body = """
+            <h1>Bright Lantern could not start running in the background</h1>
+            <pre>\(escape(message))</pre>
+            """
+    }
+    return page(body)
+}
+
+private func page(_ body: String) -> String {
+    """
         <!doctype html>
         <meta charset="utf-8">
         <style>
@@ -82,7 +116,8 @@ func startupPage(_ state: Startup, address: String, log: String) -> String? {
           body { font: 15px -apple-system, sans-serif; margin: 20vh auto 0;
                  max-width: 32em; padding: 0 2em; line-height: 1.5; }
           h1 { font-size: 1.3em; font-weight: 600; }
-          p, code { opacity: 0.8; }
+          p, code, pre { opacity: 0.8; }
+          pre { white-space: pre-wrap; font-size: 0.85em; }
         </style>
         \(body)
         """
