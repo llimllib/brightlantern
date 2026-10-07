@@ -58,6 +58,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate {
             let problem = await Task.detached { await ensureAgent() }.value
             self.agentProblem = problem
         }
+        watchSwitch()
+    }
+
+    // Every two seconds for the life of the window: a local XPC call, and the
+    // only way to notice being switched off with the daemon's page showing.
+    private func watchSwitch() {
+        Task { @MainActor [weak self] in
+            var wasOff = agentRequiresApproval()
+            while let self {
+                try? await Task.sleep(for: .seconds(2))
+                let isOff = agentRequiresApproval()
+                if leaveDaemonPage(showingDaemon: self.showingDaemon, wasOff: wasOff, isOff: isOff) {
+                    say("agent: switched off in System Settings")
+                    self.startProbing()
+                }
+                wasOff = isOff
+            }
+        }
     }
 
     // Set when the agent cannot run, and shown instead of the startup pages.

@@ -101,6 +101,20 @@ func problemWhileWaiting(_ current: AgentProblem?, requiresApproval: Bool) -> Ag
     return current == .needsApproval ? nil : current
 }
 
+// leaveDaemonPage says whether to stop showing the daemon's page because the
+// agent was just switched off (#90). A loaded page cannot tell its daemon
+// has gone until something is clicked, so the window watches the switch.
+//
+// The switch only, not the daemon: launchd restarts a crashed daemon in
+// seconds, and replacing a transcript someone is reading for that would be
+// worse than the failed click. Switched off is definite and will not fix
+// itself. And the change only, not the state: a daemon someone started by
+// hand still answers while the switch is off, and leaving its page on every
+// tick would reload it in a loop.
+func leaveDaemonPage(showingDaemon: Bool, wasOff: Bool, isOff: Bool) -> Bool {
+    showingDaemon && isOff && !wasOff
+}
+
 // fileHash identifies the daemon executable, which is what has to change for
 // re-registration to matter. Not CFBundleVersion: `mise run app` rebuilds the
 // daemon without changing any version, and that is the case seen most.
