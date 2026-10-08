@@ -62,7 +62,9 @@ builds:
     # target, so this runs once.
     hooks:
       post:
-        - mise-tasks/bundle "{{ dir (dir (dir .Path)) }}" {{ .Version }}
+        # release mode refuses to sign ad-hoc and takes a secure timestamp
+        # (#78); a snapshot, as CI builds, is whatever the keychain allows.
+        - mise-tasks/bundle "{{ dir (dir (dir .Path)) }}" {{ .Version }} {{ if .IsSnapshot }}snapshot{{ else }}release{{ end }}
 
 archives:
   # The bundle and nothing else (#77): one artefact rather than a CLI

@@ -2,6 +2,7 @@
 #MISE description="Assemble and sign Bright Lantern.app around a built daemon"
 #USAGE arg "<app>" help="the bundle, with the daemon already at Contents/MacOS/brightlantern"
 #USAGE arg "<version>" help="CFBundleShortVersionString"
+#USAGE arg "[mode]" default="dev" help="release: a Developer ID or nothing, and a secure timestamp"
 #
 # The one place the bundle is put together, so that a release ships exactly
 # the layout development runs (#77); two assemblies would drift the first time
@@ -32,6 +33,7 @@ set -euo pipefail
 
 app="$1"
 version="${2#v}"
+mode="${3:-dev}"
 src=cmd/brightlantern-app
 contents="$app/Contents"
 
@@ -80,14 +82,39 @@ iconutil -c icns -o "$contents/Resources/AppIcon.icns" "$iconset"
 # executable in a launch constraint (LWCR in `launchctl print`), and for an
 # ad-hoc signature the only thing to record is its cdhash, which every rebuild
 # changes; a Developer ID gives it a team. Whether ad-hoc breaks on a rebuild
-# was never cleanly tested (#74), and this removes the question. No timestamp,
-# which needs Apple's server and only notarization wants; no hardened
-# runtime, which is #78's. BRIGHTLANTERN_SIGN_IDENTITY overrides; "-" forces
-# ad-hoc.
+# was never cleanly tested (#74), and this removes the question.
+# BRIGHTLANTERN_SIGN_IDENTITY overrides; "-" forces ad-hoc.
 identity="${BRIGHTLANTERN_SIGN_IDENTITY:-$(security find-identity -v -p codesigning 2>/dev/null | sed -n 's/.*"\(Developer ID Application: .*\)"/\1/p' | head -1)}"
 if [ -z "$identity" ] || [ "$identity" = - ]; then
+  # A release signed ad-hoc is refused by Gatekeeper on every machine but
+  # this one, and cannot be notarized. Fail here, not on a user's first
+  # launch.
+  if [ "$mode" = release ]; then
+    echo "bundle: a release needs a Developer ID, and the keychain has none" >&2
+    exit 1
+  fi
   identity=-
   echo "bundle: no Developer ID in the keychain; signing ad-hoc" >&2
+fi
+
+# Hardened runtime with a Developer ID, which notarization requires (#78),
+# and in development too, so that what runs here is what ships. No
+# entitlements: library validation admits a dylib signed by the same team,
+# which is why lembed0.dylib is signed with the identity below rather than
+# needing disable-library-validation -- measured on #78. Not ad-hoc, though:
+# a hardened ad-hoc binary refuses an ad-hoc dylib too, so CI's ad-hoc build
+# could not load the extension. That build is checked for paths, not loads.
+flags=(--force --sign "$identity")
+if [ "$identity" != - ]; then
+  flags+=(--options runtime)
+fi
+# A secure timestamp only for a release: notarization rejects a signature
+# without one, and it is a round trip to Apple's server that development has
+# no use for.
+if [ "$mode" = release ]; then
+  flags+=(--timestamp)
+else
+  flags+=(--timestamp=none)
 fi
 # Nested code first, then the bundle: signing the bundle seals the hashes of
 # what is inside it, and does not sign it. The linker ad-hoc signs the app's
@@ -95,7 +122,7 @@ fi
 # the bundle puts the signature under the bundle identifier, which is what
 # privacy permissions attach to.
 for f in brightlantern brightlantern-apple lembed0.dylib; do
-  codesign --force --timestamp=none --sign "$identity" "$contents/MacOS/$f"
+  codesign "${flags[@]}" "$contents/MacOS/$f"
 done
-codesign --force --timestamp=none --sign "$identity" "$app"
+codesign "${flags[@]}" "$app"
 codesign --verify --strict --deep "$app"

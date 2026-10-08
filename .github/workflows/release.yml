@@ -77,6 +77,38 @@ jobs:
       # The same gate CI applies, on the artifact that goes out to people.
       - run: mise run check
 
+      # The Developer ID, for mise-tasks/bundle, which finds it with `security
+      # find-identity` and refuses to sign a release without it (#78). A
+      # keychain made and destroyed within the job, never the login one; the
+      # secrets are #87's, and these steps are the ones its check proved.
+      #
+      # Not goreleaser's notarize.macos, whose signer (quill) signs Mach-O
+      # files and not bundles: the bundle's seal over its resources and its
+      # nested code is codesign's.
+      #
+      # set-key-partition-list is what lets codesign use a key imported from
+      # the command line; without it, errSecInternalComponent (#85). The .p12
+      # has to be PBE-SHA1-3DES for `security import` to read it at all.
+      - name: Import the signing identity
+        env:
+          MACOS_SIGN_P12: ${{ secrets.MACOS_SIGN_P12 }}
+          MACOS_SIGN_PASSWORD: ${{ secrets.MACOS_SIGN_PASSWORD }}
+        run: |
+          keychain="$RUNNER_TEMP/signing.keychain-db"
+          pass="$(uuidgen)"
+          printf '%s' "$MACOS_SIGN_P12" | base64 -D > "$RUNNER_TEMP/id.p12"
+          security create-keychain -p "$pass" "$keychain"
+          security set-keychain-settings -lut 21600 "$keychain"
+          security unlock-keychain -p "$pass" "$keychain"
+          security import "$RUNNER_TEMP/id.p12" -k "$keychain" -P "$MACOS_SIGN_PASSWORD" -T /usr/bin/codesign
+          rm "$RUNNER_TEMP/id.p12"
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$pass" "$keychain" >/dev/null
+          # Into the search list, which is where find-identity and codesign
+          # look. Word splitting is wanted: it is a list of paths.
+          # shellcheck disable=SC2046
+          security list-keychains -d user -s "$keychain" $(security list-keychains -d user | tr -d '"')
+          security find-identity -v -p codesigning "$keychain"
+
       # A snapshot first, checked: the zip has to hold the whole bundle, and
       # .goreleaser.yaml lists its files by hand. Finding that out here costs
       # a minute; finding it in a published release costs a broken install.
@@ -90,3 +122,7 @@ jobs:
           # which GITHUB_TOKEN has no access to. A PAT with contents:write on
           # that repository.
           HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+
+      - name: Delete the signing keychain
+        if: always()
+        run: security delete-keychain "$RUNNER_TEMP/signing.keychain-db" || true

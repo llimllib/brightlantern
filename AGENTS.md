@@ -564,7 +564,14 @@ answers `notFound` there.
   signature is ad-hoc, and every rebuild changes the cdhash. Whether that
   breaks a rebuilt daemon was never cleanly tested; a Developer ID gives the
   constraint a team instead. `--timestamp=none`, because the timestamp
-  server is network and only notarization needs it.
+  server is network and only notarization needs it; a release takes one.
+- **Hardened runtime whenever there is a Developer ID**, development
+  included, with no entitlements (#78). Library validation admits
+  `lembed0.dylib` because the same team signed it: a hardened binary given
+  an ad-hoc copy fails `dlopen`, as the misleading `lembed0.dylib.dylib`.
+  So an ad-hoc build -- CI's -- is not hardened at all, because a hardened
+  ad-hoc binary refuses an ad-hoc dylib too. `mise-tasks/bundle release`
+  refuses to sign ad-hoc.
 - **Re-registered when the daemon's SHA-256 changes**, not
   `CFBundleVersion`: `mise run app` rebuilds the daemon at the same version,
   and `SMAppService.h` says a changed executable "may not launch" until
@@ -826,6 +833,19 @@ staged path the app has moved out of; notarization would be the real fix (#79).
 
 Pushing the cask needs `HOMEBREW_TAP_TOKEN`, a PAT secret on this repo.
 `GITHUB_TOKEN` cannot push to the tap.
+
+**The release is signed by codesign, not goreleaser.** `release.yml` imports
+`MACOS_SIGN_P12` into a keychain made for the job, and `mise-tasks/bundle`
+finds it there. goreleaser's `notarize.macos` signs through quill, which signs
+Mach-O files and cannot seal a bundle. The secrets and the keychain steps were
+proved on the runner before a release depended on them (#87); the `.p12` must
+be PBE-SHA1-3DES and the key needs `set-key-partition-list`, or codesign fails
+with `errSecInternalComponent`.
+
+The sandbox this repo is usually worked in cannot reach `timestamp.apple.com`,
+so `mise-tasks/bundle ... release` fails locally with "A timestamp was
+expected but was not found" and leaves the bundle half-signed. That is the
+sandbox; rebuild with `mise run app`.
 
 ## Planning
 
