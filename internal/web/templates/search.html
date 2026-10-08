@@ -1,0 +1,7 @@
+{{define "search.html" -}}
+{{- /* What a keystroke in the search box gets back: the rows, which htmx
+       swaps into #rows, and the sort toggle, which it swaps into the header
+       out of band (#94). */ -}}
+{{ template "list.html" . }}
+{{ template "sortbar.html" . }}
+{{- end}}

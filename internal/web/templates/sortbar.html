@@ -1,0 +1,23 @@
+{{define "sortbar.html" -}}
+{{- /* Rendered in two places: in the header with the page, and out of band
+       beside the rows each time typing swaps them (#94). The rows are all
+       that typing replaces, and without the second the toggle would appear
+       only once Enter reloaded the page, leaving a filtered list with no way
+       to reorder it.
+
+       Always present, so an out-of-band swap has something to replace:
+       hidden while browsing, which is already in date order.
+
+       Plain links, not an htmx swap: changing the order is a deliberate act
+       a few times a session, and the state belongs in the URL. */ -}}
+{{- if .Searching }}
+<div class="sortbar" id="sortbar" role="group" aria-label="Sort results"{{if .SortbarOOB}} hx-swap-oob="true"{{end}}>
+  <a class="sort{{if not .SortNewest}} is-active{{end}}"
+     {{- if .SortNewest}} href="/search?q={{.Query}}"{{else}} aria-current="true"{{end}}>relevance</a>
+  <a class="sort{{if .SortNewest}} is-active{{end}}"
+     {{- if .SortNewest}} aria-current="true"{{else}} href="/search?q={{.Query}}&amp;sort=new"{{end}}>newest</a>
+</div>
+{{- else }}
+<div id="sortbar" hidden{{if .SortbarOOB}} hx-swap-oob="true"{{end}}></div>
+{{- end }}
+{{- end}}

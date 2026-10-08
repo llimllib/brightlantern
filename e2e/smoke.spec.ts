@@ -35,6 +35,25 @@ test("typing filters the list", async ({ page }) => {
   await expect(rows.first().locator("mark")).toHaveText(/flexbox/i);
 });
 
+test("typing shows the sort toggle without pressing Enter", async ({ page }) => {
+  await page.goto("/");
+  const bar = page.locator(".sortbar");
+  await expect(bar).toBeHidden();
+
+  // The toggle is in the header and typing swaps only the rows, so it has to
+  // arrive out of band with them (#94).
+  await page.fill('input[name="q"]', "flexbox");
+  await expect(bar).toBeVisible();
+  await expect(bar.getByRole("link", { name: "newest" })).toHaveAttribute(
+    "href",
+    "/search?q=flexbox&sort=new",
+  );
+
+  // Cleared, it is browsing again, which has only one order.
+  await page.fill('input[name="q"]', "");
+  await expect(bar).toBeHidden();
+});
+
 test("a tool call expands and fetches its output", async ({ page }) => {
   await page.goto("/sessions/e2e-bravo");
 

@@ -43,6 +43,10 @@ type pageData struct {
 	// Searching distinguishes "no sessions indexed" from "no matches".
 	Searching bool
 
+	// SortbarOOB marks the sort toggle for an htmx out-of-band swap, when it
+	// rides along with the rows a keystroke replaced rather than with a page.
+	SortbarOOB bool
+
 	// EmptyNote explains an empty result list, which a quoted query makes
 	// worth distinguishing: a phrase excludes rather than demotes, so "no
 	// results" can mean the corpus does not contain those words in that order
@@ -189,7 +193,8 @@ func (s *Server) handleSearch(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, err)
 		return
 	}
-	s.render(w, r, "list.html", data)
+	data.SortbarOOB = true
+	s.render(w, r, "search.html", data)
 }
 
 // loadTranscript fills in the right pane from the session's file, or from the

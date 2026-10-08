@@ -846,6 +846,51 @@ func TestSortToggleShowsTheActiveOrder(t *testing.T) {
 	}
 }
 
+// Typing swaps only the rows, and the toggle lives in the header, so the
+// toggle has to ride along out of band. Without it, the list filters as you
+// type but there is no way to reorder it until Enter reloads the page (#94).
+func TestTypingASearchBringsTheSortToggle(t *testing.T) {
+	f := newFixture(t, map[string][]string{"aaa": {userMsg("grafana dashboards")}})
+
+	// A browsing page still has somewhere for the toggle to land, out of
+	// the layout until there is a query.
+	_, doc := f.get(t, "/")
+	if hidden, ok := doc.Find("#sortbar").Attr("hidden"); doc.Find("#sortbar").Length() != 1 || !ok {
+		t.Errorf("browsing page: want one hidden #sortbar to swap into, got %d (hidden=%v %q)",
+			doc.Find("#sortbar").Length(), ok, hidden)
+	}
+
+	htmx := func(path string) *goquery.Document {
+		t.Helper()
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodGet, path, nil)
+		req.Header.Set("HX-Request", "true")
+		f.handler.ServeHTTP(rec, req)
+		doc, err := goquery.NewDocumentFromReader(strings.NewReader(rec.Body.String()))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return doc
+	}
+
+	doc = htmx("/search?q=" + url.QueryEscape("grafana"))
+	bar := doc.Find("#sortbar.sortbar")
+	if oob, _ := bar.Attr("hx-swap-oob"); bar.Length() != 1 || oob != "true" {
+		t.Fatalf("typed search: want an out-of-band #sortbar, got %d (hx-swap-oob=%q)", bar.Length(), oob)
+	}
+	// The links carry the query as typed so far, not the one the page loaded with.
+	if href, _ := bar.Find(`.sort:not(.is-active)`).Attr("href"); href != "/search?q=grafana&sort=new" {
+		t.Errorf("newest link = %q, want it to carry the typed query", href)
+	}
+
+	// Clearing the box is browsing again, which has no order to choose.
+	doc = htmx("/search?q=")
+	bar = doc.Find("#sortbar")
+	if _, hidden := bar.Attr("hidden"); bar.Length() != 1 || !hidden || bar.Find(".sort").Length() != 0 {
+		t.Errorf("cleared search: want the toggle hidden, got %d hidden=%v", bar.Length(), hidden)
+	}
+}
+
 // An unknown value must not become a third mode.
 func TestUnknownSortFallsBackToRelevance(t *testing.T) {
 	f := newFixture(t, map[string][]string{
