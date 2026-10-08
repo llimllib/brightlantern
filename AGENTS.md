@@ -80,7 +80,8 @@ registration failure must always fall back to lexical-only; never continue on
 that connection.
 
 The usual cause of that failure is no reachable GPU, not a bad file. On macOS
-llama.cpp needs a Metal device, which a sandbox or headless CI runner lacks.
+llama.cpp needs a Metal device, which a sandbox lacks. GitHub's macos-26
+runners have one, virtual and slow -- see "Build".
 The extension still loads and `lembed_version()` still answers, so the only
 honest test of "is semantic search working" is opening a connection.
 
@@ -621,6 +622,14 @@ cannot hold. The helper ships beside the binary and `embed.Beside` finds it
 the way it finds the dylib, and CI and the release runner are pinned to
 `macos-26` for the SDK.
 
+**The helper must compile against the macOS 26 SDK**, which is what the runners
+have, and a development machine may have a newer one. `GenerationOptions(
+samplingMode:)` is SDK 27's spelling; SDK 26 has only `sampling:`. It compiled
+locally and failed on every runner, which is why the v0.0.3 release failed.
+CI builds the helper on every push now. Command Line Tools keeps older SDKs
+beside the current one, so `swiftc -sdk
+/Library/Developer/CommandLineTools/SDKs/MacOSX26.sdk ...` checks it locally.
+
 **A refusal is an answer, not a failure.** The on-device model has guardrails,
 and they are not subtle: the one session of 200 it declined was about speeding
 up `rmtree`. Exit 4 from the helper -- `guardrailViolation`, `refusal`, too
@@ -729,12 +738,14 @@ which selector broke, in the suite that runs on every commit.
 
 ## Tests
 
-`mise run check` is ~20s. Nearly all of it is `internal/index` and
+`mise run check` is ~35s. Nearly all of it is `internal/index` and
 `internal/indexer`: the watcher tests wait out a 2s settle timer, and each
-semantic test loads the model. The other five packages total under 2s.
+semantic test loads the model. The other packages total a few seconds.
 
-Semantic tests skip when the backend cannot actually run, not when its files
-are missing -- see the GPU note above.
+Semantic tests skip when the model is not installed **and** when it is but
+the backend cannot run it -- the second because only opening a connection is
+an honest test (see the GPU note above). CI relies on the first: it installs
+the model after `check`, so they skip there.
 
 A watcher test asserting a file was **not** indexed has to wait out a second
 settle first. "Not indexed yet" and "never indexed" look identical, so an
