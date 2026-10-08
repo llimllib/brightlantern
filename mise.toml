@@ -59,80 +59,34 @@ swiftc -O -target arm64-apple-macos26.0 -o "$BRIGHTLANTERN_DATA_DIR/brightlanter
 
 [tasks.app]
 description = "Build build/Bright Lantern.app"
-# A WKWebView showing the daemon, built with plain swiftc and a hand-written
-# Info.plist: AppKit and WebKit are in the Command Line Tools SDK, so no Xcode
-# project. swift is not in [tools] on purpose -- mise's core:swift is a
-# swift.org toolchain, which does not carry those frameworks, so Command Line
-# Tools would stay the real dependency. See
-# docs/plans/2026-10-06-wkwebview-shell-design.md.
+# mise-tasks/bundle does the assembling, so that a release (through
+# goreleaser) and this build the same layout; see it for why the bundle looks
+# the way it does.
 #
 # Not a dependency of check, which stays the quick loop; CI runs it after.
-#
-# The daemon rides inside, so that SMAppService can register an agent that is
-# part of the bundle and an upgrade replaces both at once (#86). Everything in
-# Contents/MacOS is nested code and has to be signed on its own before the
-# bundle is, and a data file there stops the bundle signing at all -- so the
-# model goes in Resources, and embed.DefaultPaths knows to pair the two.
 depends = ["build", "setup"]
 sources = [
+  "mise-tasks/bundle",
   "cmd/brightlantern-app/*.swift",
   "cmd/brightlantern-app/*.plist",
   "cmd/brightlantern-app/AppIcon.png",
+  "LICENSE",
+  "NOTICE.md",
   "brightlantern",
   "{{env.BRIGHTLANTERN_DATA_DIR}}/brightlantern-apple",
   "{{env.BRIGHTLANTERN_DATA_DIR}}/lembed0.dylib",
   "{{env.BRIGHTLANTERN_DATA_DIR}}/all-MiniLM-L6-v2.Q8_0.gguf",
 ]
 outputs = ["build/Bright Lantern.app/Contents/MacOS/brightlantern-app", "build/Bright Lantern.app/Contents/MacOS/brightlantern", "build/Bright Lantern.app/Contents/Info.plist"]
+# From nothing every time, so a file dropped from the layout does not linger.
+# It also moves the bundle directory's mtime, which is what the Dock and the
+# app switcher key their icon cache on: rebuilt in place, a changed icon never
+# showed up. The version is the one `mise run build` stamps into the daemon.
 run = '''
-command -v swiftc >/dev/null || { echo "app: no swiftc; install Command Line Tools: xcode-select --install" >&2; exit 1; }
-plutil -lint -s cmd/brightlantern-app/*.plist
-contents="build/Bright Lantern.app/Contents"
-mkdir -p "$contents/MacOS" "$contents/Resources" "$contents/Library/LaunchAgents"
-cp cmd/brightlantern-app/Info.plist "$contents/Info.plist"
-# The agent SMAppService registers (#74). The app looks for it by this name.
-cp cmd/brightlantern-app/org.billmill.brightlantern.plist "$contents/Library/LaunchAgents/"
-swiftc -O -target arm64-apple-macos26.0 -o "$contents/MacOS/brightlantern-app" cmd/brightlantern-app/main.swift cmd/brightlantern-app/menu.swift cmd/brightlantern-app/address.swift cmd/brightlantern-app/startup.swift cmd/brightlantern-app/agent.swift cmd/brightlantern-app/register.swift cmd/brightlantern-app/log.swift
-cp brightlantern "$BRIGHTLANTERN_DATA_DIR/brightlantern-apple" "$BRIGHTLANTERN_DATA_DIR/lembed0.dylib" "$contents/MacOS/"
-cp "$BRIGHTLANTERN_DATA_DIR/all-MiniLM-L6-v2.Q8_0.gguf" "$contents/Resources/"
-# The icon is Eucalyp's, from Flaticon, which wants attribution: the About
-# panel carries it. The source is 512px, so the iconset has no 512@2x, which
-# iconutil accepts.
-iconset="$(mktemp -d)/AppIcon.iconset"
-mkdir "$iconset"
-for s in 16 32 128 256 512; do
-  sips -z $s $s cmd/brightlantern-app/AppIcon.png --out "$iconset/icon_${s}x${s}.png" >/dev/null
-  [ $((s * 2)) -le 512 ] && sips -z $((s * 2)) $((s * 2)) cmd/brightlantern-app/AppIcon.png --out "$iconset/icon_${s}x${s}@2x.png" >/dev/null
-done
-iconutil -c icns -o "$contents/Resources/AppIcon.icns" "$iconset"
-rm -rf "$(dirname "$iconset")"
-# A Developer ID when the keychain has one. SMAppService records the agent's
-# executable in a launch constraint (LWCR in `launchctl print`), and for an
-# ad-hoc signature the only thing to record is its cdhash, which every rebuild
-# changes; a Developer ID gives it a team. Whether ad-hoc breaks on a rebuild
-# was never cleanly tested (#74), and this removes the question. No timestamp,
-# which needs Apple's server and only notarization wants; no hardened
-# runtime, which is #78's. BRIGHTLANTERN_SIGN_IDENTITY overrides; "-" forces
-# ad-hoc.
-identity="${BRIGHTLANTERN_SIGN_IDENTITY:-$(security find-identity -v -p codesigning 2>/dev/null | sed -n 's/.*"\(Developer ID Application: .*\)"/\1/p' | head -1)}"
-if [ -z "$identity" ] || [ "$identity" = - ]; then
-  identity=-
-  echo "app: no Developer ID in the keychain; signing ad-hoc" >&2
-fi
-# Nested code first, then the bundle: signing the bundle seals the hashes of
-# what is inside it, and does not sign it. The linker ad-hoc signs the app's
-# executable alone, under its file name and with Info.plist unbound; sealing
-# the bundle puts the signature under the bundle identifier, which is what
-# privacy permissions attach to.
-for f in brightlantern brightlantern-apple lembed0.dylib; do
-  codesign --force --timestamp=none --sign "$identity" "$contents/MacOS/$f"
-done
-codesign --force --timestamp=none --sign "$identity" "build/Bright Lantern.app"
-codesign --verify --strict --deep "build/Bright Lantern.app"
-# The Dock and the app switcher cache a bundle's icon until the bundle
-# directory's mtime moves, and rebuilding into an existing bundle does not
-# move it: without this, a changed icon never shows up.
-touch "build/Bright Lantern.app"
+rm -rf "build/Bright Lantern.app"
+mkdir -p "build/Bright Lantern.app/Contents/MacOS"
+cp brightlantern "build/Bright Lantern.app/Contents/MacOS/"
+mise-tasks/bundle "build/Bright Lantern.app" "$(git describe --tags --dirty 2>/dev/null || echo dev)"
 '''
 
 [tasks.app-test]
@@ -220,21 +174,6 @@ description = "Download the browser the e2e tests drive"
 # version is tied to the @playwright/test release. Bumping that package means
 # running this again; Playwright says so itself when the build is missing.
 run = "pnpm exec playwright install chromium"
-
-[tasks.release-assets]
-description = "Stage the extension and model for the release archive"
-# The release archive ships these beside the binary, because embed.DefaultPaths
-# resolves the executable and looks next to it -- which is what makes both the
-# extracted tarball and the Homebrew cask work without a build-time prefix.
-#
-# setup is idempotent and does the hard part (building the dylib from the
-# landrix fork, downloading the model); this only copies its output somewhere
-# .goreleaser.yaml can name relatively.
-depends = ["setup", "apple"]
-run = [
-  "mkdir -p build",
-  'cp "$BRIGHTLANTERN_DATA_DIR/lembed0.dylib" "$BRIGHTLANTERN_DATA_DIR/all-MiniLM-L6-v2.Q8_0.gguf" "$BRIGHTLANTERN_DATA_DIR/brightlantern-apple" build/',
-]
 
 [tasks.release]
 description = "Publish a release for the current tag (run by CI on a v* tag)"

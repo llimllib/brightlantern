@@ -52,9 +52,9 @@ jobs:
           key: go-v2-${{ runner.os }}-${{ hashFiles('go.sum') }}
           restore-keys: go-v2-${{ runner.os }}-
 
-      # The release archive ships the sqlite-lembed extension and the embedding
-      # model beside the binary, and `mise run release-assets` builds the first
-      # from source. That is a llama.cpp checkout and a couple of minutes of
+      # The release is Bright Lantern.app, which carries the sqlite-lembed
+      # extension and the embedding model, and `mise run setup` builds the
+      # first from source. That is a llama.cpp checkout and a couple of minutes of
       # cmake, unchanged between releases, so it is worth keeping.
       #
       # Building needs cmake, which the macOS runner image already provides.
@@ -76,6 +76,11 @@ jobs:
 
       # The same gate CI applies, on the artifact that goes out to people.
       - run: mise run check
+
+      # A snapshot first, checked: the zip has to hold the whole bundle, and
+      # .goreleaser.yaml lists its files by hand. Finding that out here costs
+      # a minute; finding it in a published release costs a broken install.
+      - run: mise run release-check
 
       - name: Release
         run: mise run release

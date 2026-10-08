@@ -15,16 +15,18 @@ keyword search by reciprocal rank fusion.
 
 ```bash
 brew install llimllib/tap/brightlantern
-brightlantern
 ```
 
-That serves on <http://127.0.0.1:5268>, building the index behind the page if
-there is not one yet. `brightlantern help` lists the other commands.
+Then open **Bright Lantern** from Applications. The first launch finds your
+sessions, indexes them behind the page, and registers a background agent that
+keeps the index current at login with no window open. The window is a view
+onto that agent, which also serves <http://127.0.0.1:5268> to any browser.
+`brightlantern` is on PATH too; `brightlantern help` lists its commands.
 
-macOS on Apple Silicon. The cask carries the embedding model and the search
-extension alongside the binary, so nothing else is downloaded.
+macOS on Apple Silicon. The app carries the embedding model and the search
+extension, so nothing else is downloaded.
 
-`brightlantern` finds your sessions itself, looking in `$CLAUDE_CONFIG_DIR/projects`,
+Bright Lantern finds your sessions itself, looking in `$CLAUDE_CONFIG_DIR/projects`,
 `~/.config/claude/projects`, `~/.claude/projects`, and `~/.pi/agent/sessions`,
 and indexes everything it finds. What it found is written to
 `~/.config/brightlantern/config.toml` on the first run, so that installing another
@@ -37,6 +39,10 @@ work in the meantime.
 
 ## Run at login
 
+The app does this itself; its switch in System Settings is under Background
+App Activity. Without the app -- built from source, say -- the CLI can install
+the agent instead:
+
 ```bash
 brightlantern                    # once, from a terminal: finds your sessions
 brightlantern service install    # then keep it running
@@ -45,7 +51,7 @@ brightlantern service install    # then keep it running
 That installs a LaunchAgent, so the index stays current and search stays warm
 with no terminal open. Logs are in `~/Library/Logs/brightlantern/`.
 `brightlantern service status` says what it is doing, and `service uninstall`
-removes it. After `brew upgrade`, `service restart` picks up the new binary.
+removes it. After rebuilding, `service restart` picks up the new binary.
 
 Typing `brightlantern` while the agent runs says it is already running rather
 than starting a second copy, and `brightlantern index` declines to write the

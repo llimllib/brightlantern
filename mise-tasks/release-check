@@ -1,0 +1,38 @@
+#!/usr/bin/env bash
+#MISE description="Build the release locally and check the zip holds a working bundle"
+#
+# The release's configuration otherwise runs only on a tag, which is where
+# v0.0.3 found its failure. This builds a snapshot and checks the one thing
+# goreleaser cannot: that the zip is the bundle. The files list in
+# .goreleaser.yaml names everything but the daemon, so a file added to the
+# bundle and not to the list would ship missing, and the bundle's signature
+# with it.
+set -euo pipefail
+
+goreleaser release --snapshot --clean
+
+app="dist/brightlantern_darwin_arm64_v8.0/Bright Lantern.app"
+zip=(dist/brightlantern_*_macos_arm64.zip)
+
+tmp="$(mktemp -d)"
+trap 'rm -rf "$tmp"' EXIT
+# ditto, which is how the zip will be opened by Homebrew as well as Finder.
+ditto -x -k "${zip[0]}" "$tmp"
+
+if ! diff <(cd "$app" && find . -type f | sort) <(cd "$tmp/Bright Lantern.app" && find . -type f | sort); then
+  echo "release-check: the zip and the bundle hold different files (< bundle, > zip); see files: in .goreleaser.yaml" >&2
+  exit 1
+fi
+codesign --verify --strict --deep "$tmp/Bright Lantern.app"
+# Without BRIGHTLANTERN_DATA_DIR, which mise sets and which would otherwise
+# send the binary to the data directory: this has to find the bundle's own
+# extension and model.
+env -u BRIGHTLANTERN_DATA_DIR "$tmp/Bright Lantern.app/Contents/MacOS/brightlantern" info >"$tmp/info"
+for f in "Contents/MacOS/lembed0.dylib" "Contents/Resources/all-MiniLM-L6-v2.Q8_0.gguf" "Contents/MacOS/brightlantern-apple"; do
+  if ! grep -qF "Bright Lantern.app/$f" "$tmp/info"; then
+    echo "release-check: brightlantern info does not name the bundle's $f:" >&2
+    cat "$tmp/info" >&2
+    exit 1
+  fi
+done
+echo "release-check: ${zip[0]} is the bundle, signed, and finds its own files"

@@ -104,6 +104,13 @@ jobs:
       - name: Build the app
         run: mise run app
 
+      # The release, built as a snapshot and checked: the zip must be the
+      # whole bundle, signed, finding its own extension and model. Otherwise
+      # the release configuration runs only on a tag, which is where v0.0.3
+      # found its failure.
+      - name: Release check
+        run: mise run release-check
+
       # Playwright's browsers are a download into a shared cache, not a
       # repository dependency, so they have to be asked for explicitly. Keyed
       # on the lockfile because the browser build is pinned to the

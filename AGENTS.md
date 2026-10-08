@@ -789,11 +789,30 @@ without it rather than compiling against whichever `sqlite3.h` the machine has.
 `before` hooks also run `sqlite-header` and `ts`; a missing `app.js` is embedded
 silently and ships the previous release's keyboard handling.
 
-The archive carries `lembed0.dylib` and the model beside the binary, and
-`embed.DefaultPaths` resolves the running executable and looks in its own
-directory. That is what makes both an unpacked tarball and the cask work:
-Homebrew puts only `brightlantern` on PATH and leaves the rest in the Caskroom, so
-resolving *through* the symlink is what finds them.
+The release is a zip of **Bright Lantern.app**, nothing else (#77), and the
+cask installs it into `/Applications` and links
+`Contents/MacOS/brightlantern` onto PATH. `embed.DefaultPaths` resolves the
+running executable *through* that symlink, which is what finds the bundle's
+dylib and model.
+
+`mise-tasks/bundle` assembles the bundle for both `mise run app` and the
+release, so the two cannot drift. goreleaser builds the daemon **straight into
+`Bright Lantern.app/Contents/MacOS/`** and a post-build hook assembles the
+bundle around it. That odd shape is forced twice over: `homebrew_casks` will
+only make a cask from an archive of a build, not a `meta` archive, and an
+archive cannot add a file the build already put there -- so the archive's
+`files:` names everything **except** the daemon, by hand.
+
+A file added to the bundle and not to that list would ship missing and break
+the bundle's signature. `mise run release-check` builds a snapshot and diffs
+the zip against the bundle, then verifies the unzipped copy's signature and
+that its daemon finds the bundle's own files. CI runs it on every push and the
+release before publishing; it is also the only test of the release
+configuration short of a tag.
+
+goreleaser's cask has no `app` field, so `custom_block` writes the stanza.
+`binaries:` is spelled out as `#{appdir}/...`: left empty, goreleaser writes
+the build's base name, which names nothing once the app has moved.
 
 **Homebrew quarantines cask artifacts by default** -- that is what
 `--no-quarantine` overrides -- and nothing shipped is signed by a Developer ID.
@@ -802,7 +821,8 @@ an "Apple could not verify" dialog, while the dylib fails `dlopen` and SQLite
 retries with the suffix appended, so the error names `lembed0.dylib.dylib` and
 says "no such file" about a file that is right there. The result is a working
 brightlantern with semantic search silently gone. The `postflight_steps` + `xattr -dr`
-in `.goreleaser.yaml` clears both; notarization would be the real fix.
+in `.goreleaser.yaml` clears both, over `{{appdir}}`'s bundle rather than the
+staged path the app has moved out of; notarization would be the real fix (#79).
 
 Pushing the cask needs `HOMEBREW_TAP_TOKEN`, a PAT secret on this repo.
 `GITHUB_TOKEN` cannot push to the tap.

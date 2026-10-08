@@ -1,0 +1,101 @@
+#!/usr/bin/env bash
+#MISE description="Assemble and sign Bright Lantern.app around a built daemon"
+#USAGE arg "<app>" help="the bundle, with the daemon already at Contents/MacOS/brightlantern"
+#USAGE arg "<version>" help="CFBundleShortVersionString"
+#
+# The one place the bundle is put together, so that a release ships exactly
+# the layout development runs (#77); two assemblies would drift the first time
+# one changed. `mise run app` copies its binary into build/ and calls this.
+# goreleaser builds its binary straight into the bundle's path in dist/ and
+# calls this from a post-build hook, which is what lets the cask install the
+# bundle: homebrew_casks wants an archive of a build, not a meta archive.
+#
+# Builds around what is there rather than clearing the directory first, which
+# would take the daemon with it. Both callers start from an empty one.
+#
+# A WKWebView showing the daemon, built with plain swiftc and a hand-written
+# Info.plist: AppKit and WebKit are in the Command Line Tools SDK, so no Xcode
+# project. swift is not in [tools] on purpose -- mise's core:swift is a
+# swift.org toolchain, which does not carry those frameworks, so Command Line
+# Tools would stay the real dependency. See
+# docs/plans/2026-10-06-wkwebview-shell-design.md.
+#
+# The daemon rides inside, so that SMAppService can register an agent that is
+# part of the bundle and an upgrade replaces both at once (#86). Everything in
+# Contents/MacOS is nested code and has to be signed on its own before the
+# bundle is, and a data file there stops the bundle signing at all -- so the
+# model goes in Resources, and embed.DefaultPaths knows to pair the two.
+#
+# Needs `mise run setup` and `mise run apple` to have filled
+# $BRIGHTLANTERN_DATA_DIR.
+set -euo pipefail
+
+app="$1"
+version="${2#v}"
+src=cmd/brightlantern-app
+contents="$app/Contents"
+
+if [ ! -x "$contents/MacOS/brightlantern" ]; then
+  echo "bundle: no daemon at $contents/MacOS/brightlantern" >&2
+  exit 1
+fi
+
+command -v swiftc >/dev/null || { echo "bundle: no swiftc; install Command Line Tools: xcode-select --install" >&2; exit 1; }
+plutil -lint -s "$src"/*.plist
+
+mkdir -p "$contents/MacOS" "$contents/Resources" "$contents/Library/LaunchAgents"
+
+cp "$src/Info.plist" "$contents/Info.plist"
+# Shown in About and Finder's Get Info. Not what decides re-registration:
+# that is the daemon's hash, because `mise run app` rebuilds at one version.
+plutil -replace CFBundleShortVersionString -string "$version" "$contents/Info.plist"
+# The agent SMAppService registers (#74). The app looks for it by this name.
+cp "$src/org.billmill.brightlantern.plist" "$contents/Library/LaunchAgents/"
+
+swiftc -O -target arm64-apple-macos26.0 -o "$contents/MacOS/brightlantern-app" \
+  "$src/main.swift" "$src/menu.swift" "$src/address.swift" "$src/startup.swift" \
+  "$src/agent.swift" "$src/register.swift" "$src/log.swift"
+cp "$BRIGHTLANTERN_DATA_DIR/brightlantern-apple" "$BRIGHTLANTERN_DATA_DIR/lembed0.dylib" "$contents/MacOS/"
+cp "$BRIGHTLANTERN_DATA_DIR/all-MiniLM-L6-v2.Q8_0.gguf" "$contents/Resources/"
+# MIT asks that the notice travel with copies, and a bundle someone installs
+# is one. NOTICE.md covers what is redistributed inside it, the icon included.
+cp LICENSE NOTICE.md "$contents/Resources/"
+
+# The icon is Eucalyp's, from Flaticon, which wants attribution: the About
+# panel carries it. The source is 512px, so the iconset has no 512@2x, which
+# iconutil accepts.
+tmp="$(mktemp -d)"
+trap 'rm -rf "$tmp"' EXIT
+iconset="$tmp/AppIcon.iconset"
+mkdir "$iconset"
+for s in 16 32 128 256 512; do
+  sips -z $s $s "$src/AppIcon.png" --out "$iconset/icon_${s}x${s}.png" >/dev/null
+  if [ $((s * 2)) -le 512 ]; then
+    sips -z $((s * 2)) $((s * 2)) "$src/AppIcon.png" --out "$iconset/icon_${s}x${s}@2x.png" >/dev/null
+  fi
+done
+iconutil -c icns -o "$contents/Resources/AppIcon.icns" "$iconset"
+
+# A Developer ID when the keychain has one. SMAppService records the agent's
+# executable in a launch constraint (LWCR in `launchctl print`), and for an
+# ad-hoc signature the only thing to record is its cdhash, which every rebuild
+# changes; a Developer ID gives it a team. Whether ad-hoc breaks on a rebuild
+# was never cleanly tested (#74), and this removes the question. No timestamp,
+# which needs Apple's server and only notarization wants; no hardened
+# runtime, which is #78's. BRIGHTLANTERN_SIGN_IDENTITY overrides; "-" forces
+# ad-hoc.
+identity="${BRIGHTLANTERN_SIGN_IDENTITY:-$(security find-identity -v -p codesigning 2>/dev/null | sed -n 's/.*"\(Developer ID Application: .*\)"/\1/p' | head -1)}"
+if [ -z "$identity" ] || [ "$identity" = - ]; then
+  identity=-
+  echo "bundle: no Developer ID in the keychain; signing ad-hoc" >&2
+fi
+# Nested code first, then the bundle: signing the bundle seals the hashes of
+# what is inside it, and does not sign it. The linker ad-hoc signs the app's
+# executable alone, under its file name and with Info.plist unbound; sealing
+# the bundle puts the signature under the bundle identifier, which is what
+# privacy permissions attach to.
+for f in brightlantern brightlantern-apple lembed0.dylib; do
+  codesign --force --timestamp=none --sign "$identity" "$contents/MacOS/$f"
+done
+codesign --force --timestamp=none --sign "$identity" "$app"
+codesign --verify --strict --deep "$app"

@@ -1,8 +1,9 @@
 # Third-party components
 
 Bright Lantern is MIT-licensed; see `LICENSE`. This file covers the third-party work
-it redistributes: two files that the release archive ships alongside the
-`brightlantern` binary, and one library compiled into the binary itself.
+it redistributes: two files that Bright Lantern.app ships beside the
+`brightlantern` binary, one library compiled into the binary itself, and the
+app's icon.
 
 ## lembed0.dylib
 
@@ -39,3 +40,9 @@ exactly why it needs saying here.
 Full text at <https://www.apache.org/licenses/LICENSE-2.0>. Apache-2.0 asks that
 its notices travel with redistributions, and MIT on Bright Lantern's own code does not
 change that: every file keeps the licence it arrived under.
+
+## AppIcon.icns
+
+The lantern, from [Flaticon](https://www.flaticon.com/free-icons/fire-lamp):
+"Fire lamp icons created by Eucalyp - Flaticon". Flaticon's free licence asks
+for that attribution, which the app's About panel also carries.

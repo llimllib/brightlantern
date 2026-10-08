@@ -31,15 +31,19 @@ before:
     # goreleaser.
     - mise run ts
 
-    # Builds the sqlite-lembed dylib and downloads the model, then copies both
-    # into build/ for the archive below. Idempotent; the slow part only runs
-    # when they are missing.
-    - mise run release-assets
+    # The sqlite-lembed dylib, the model and the titles helper, all of which
+    # the bundle carries; mise-tasks/bundle takes them from the data
+    # directory. Idempotent; the slow part only runs when they are missing.
+    - mise run setup
+    - mise run apple
 
 builds:
   - id: brightlantern
     main: ./cmd/brightlantern
-    binary: brightlantern
+    # Built straight into its place in the bundle, which the post hook below
+    # assembles around it. That makes the bundle an ordinary darwin archive,
+    # which homebrew_casks needs and a meta archive is not.
+    binary: "Bright Lantern.app/Contents/MacOS/brightlantern"
     goos: [darwin]
     goarch: [arm64]
     env:
@@ -53,34 +57,32 @@ builds:
       # main.Version, not the main.version goreleaser defaults to: the variable
       # already exists and `mise run build` already stamps it the same way.
       - -s -w -X main.Version={{ .Version }}
+    # The release is Bright Lantern.app with this binary inside, assembled by
+    # the script `mise run app` uses so that the two cannot drift (#77). One
+    # target, so this runs once.
+    hooks:
+      post:
+        - mise-tasks/bundle "{{ dir (dir (dir .Path)) }}" {{ .Version }}
 
 archives:
-  - formats: ["tar.gz"]
-    # One target, so there is nothing to template: the name says what it is.
+  # The bundle and nothing else (#77): one artefact rather than a CLI
+  # tarball and an app that each carry the binary, the dylib and the model,
+  # and the only shape that can be stapled (#79). LICENSE and NOTICE.md are
+  # inside it, in Contents/Resources.
+  - formats: ["zip"]
     name_template: "{{ .ProjectName }}_{{ .Version }}_macos_arm64"
+    #
+    # The daemon is already in the archive, being the build, and adding it a
+    # second time is an error. So the files are listed rather than globbed
+    # whole, and something added to Contents/MacOS has to be named here too:
+    # `mise run release-check`, in CI, compares the zip against the bundle,
+    # which is how that gets noticed before a release rather than after.
+    #
+    # dst names Contents because goreleaser strips the matches' common prefix,
+    # which runs through Contents/.
     files:
-      - README.md
-      # MIT asks that the copyright notice travel with copies of the software,
-      # and a tarball someone downloads is a copy. NOTICE.md carries the same
-      # for what is redistributed inside and beside the binary.
-      - LICENSE
-      - NOTICE.md
-      # Flat, beside the binary, because that is where embed.DefaultPaths looks:
-      # it resolves the executable and checks its own directory first. A
-      # Homebrew cask symlinks only brightlantern onto PATH and leaves everything
-      # else in the Caskroom, so resolving through the symlink is what finds
-      # these.
-      - src: build/lembed0.dylib
-        dst: .
-        strip_parent: true
-      - src: build/all-MiniLM-L6-v2.Q8_0.gguf
-        dst: .
-        strip_parent: true
-      # The on-device titles helper, found the same way. Built by swiftc on
-      # the runner, which needs Command Line Tools and nothing more.
-      - src: build/brightlantern-apple
-        dst: .
-        strip_parent: true
+      - src: "dist/brightlantern_darwin_arm64_v8.0/Bright Lantern.app/Contents/{Info.plist,Library/**/*,Resources/*,_CodeSignature/*,MacOS/brightlantern-app,MacOS/brightlantern-apple,MacOS/lembed0.dylib}"
+        dst: "Bright Lantern.app/Contents"
 
 changelog:
   sort: asc
@@ -103,11 +105,14 @@ homebrew_casks:
     # and its cask template never emits it -- checked at 2.17.0, 2.18.1 and
     # main. Homebrew requires the stanza of formulae, not casks. LICENSE travels
     # in the archive instead, which is what MIT actually asks for.
-    # Only the binary goes onto PATH. The extension and the model stay in the
-    # Caskroom beside it, which embed.DefaultPaths finds by resolving the
-    # symlink -- see internal/embed/paths_test.go.
+    # The CLI is linked out of the installed bundle, and embed.DefaultPaths
+    # finds the extension and the model by resolving that symlink into
+    # Contents/MacOS -- see internal/embed/paths_test.go. From appdir, not
+    # the staged archive, which the app stanza has moved the bundle out of.
+    # Spelled out because left empty, goreleaser writes the build's base
+    # name, `binary "brightlantern"`, which names nothing once the app moves.
     binaries:
-      - brightlantern
+      - "#{appdir}/Bright Lantern.app/Contents/MacOS/brightlantern"
     repository:
       owner: llimllib
       name: homebrew-tap
@@ -125,26 +130,34 @@ homebrew_casks:
     # verify" dialog, and the dylib fails dlopen with a misleading "no such
     # file" that degrades silently to keyword-only search.
     #
-    # Recursive over the whole staged path rather than naming the binary, which
-    # is where this differs from the other casks in the tap: the extension is
-    # dlopen'd and needs clearing just as much as the executable does.
+    # Recursive over the whole bundle rather than naming the binary, which is
+    # where this differs from the other casks in the tap: the extension is
+    # dlopen'd and needs clearing just as much as the executable does. Over
+    # the bundle in appdir, not the staged path, which the app stanza has
+    # moved it out of.
     #
-    # The inner quoting is a Go template emitting a literal {{staged_path}},
-    # which is Homebrew's placeholder, not goreleaser's.
+    # The real fix is a Developer ID signature and notarization (#78, #79),
+    # which delete this. That would also cover someone who downloads the zip
+    # directly, which this does not.
     #
-    # The real fix is a Developer ID signature and notarization, which
-    # goreleaser supports through notarize.macos. That would also cover someone
-    # who downloads the tarball directly, which this does not.
+    # The inner quoting is a Go template emitting a literal {{appdir}}, which
+    # is Homebrew's placeholder, not goreleaser's. postflight_steps rather
+    # than a postflight block, which Homebrew's style checks now reject.
+    #
+    # The app stanza is written here because goreleaser's cask has no app
+    # field (#77).
     custom_block: |
+      app "Bright Lantern.app"
+
       postflight_steps do
         on_macos do
-          run "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "{{ "{{staged_path}}" }}"]
+          run "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "{{ "{{appdir}}" }}/Bright Lantern.app"]
         end
       end
     caveats: |
-      Run `brightlantern` once from a terminal: it finds your agent sessions
-      and indexes them. Then `brightlantern service install` keeps it running
-      at login, and `brightlantern service restart` picks up an upgrade.
+      Open Bright Lantern from Applications once. It finds your agent
+      sessions, indexes them, and keeps indexing at login with no window
+      open. `brightlantern` on the command line uses the same index.
 
       Titles are generated on-device and need Apple Intelligence turned on.
 
@@ -152,8 +165,8 @@ release:
   footer: |
     ---
 
-    The archive carries the sqlite-lembed extension and the embedding model
-    beside the binary, so semantic search works from an unpacked tarball with
-    nothing else installed.
+    The zip is Bright Lantern.app, which carries the daemon, the
+    sqlite-lembed extension and the embedding model, so semantic search works
+    with nothing else installed.
 
     `brew install llimllib/tap/brightlantern`
