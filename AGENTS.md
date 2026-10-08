@@ -821,15 +821,28 @@ goreleaser's cask has no `app` field, so `custom_block` writes the stanza.
 `binaries:` is spelled out as `#{appdir}/...`: left empty, goreleaser writes
 the build's base name, which names nothing once the app has moved.
 
-**Homebrew quarantines cask artifacts by default** -- that is what
-`--no-quarantine` overrides -- and nothing shipped is signed by a Developer ID.
-Both files are refused, and differently: the binary dies with `Killed: 9` behind
-an "Apple could not verify" dialog, while the dylib fails `dlopen` and SQLite
-retries with the suffix appended, so the error names `lembed0.dylib.dylib` and
-says "no such file" about a file that is right there. The result is a working
-brightlantern with semantic search silently gone. The `postflight_steps` + `xattr -dr`
-in `.goreleaser.yaml` clears both, over `{{appdir}}`'s bundle rather than the
-staged path the app has moved out of; notarization would be the real fix (#79).
+**Homebrew quarantines cask artifacts**, and a quarantined file that is not
+signed, notarized and stapled is refused -- differently by kind: a binary dies
+with `Killed: 9` behind an "Apple could not verify" dialog, while the dylib
+fails `dlopen` and SQLite retries with the suffix appended, so the error names
+`lembed0.dylib.dylib` and says "no such file" about a file that is right there.
+The result is a working brightlantern with semantic search silently gone.
+Through v0.0.2 a `postflight_steps` + `xattr -dr` in the cask stripped the
+quarantine; it is gone since the bundle is notarized (#79).
+
+**Notarized and stapled in goreleaser's post-build hook**, by
+`mise-tasks/notarize`, after `bundle` signs and before the archive is made:
+`notarytool submit --wait` on a `ditto` zip, `stapler staple`, then `spctl`
+must accept it. On a rejection it prints `notarytool log`, which names each
+file and why -- that is the whole debugging loop. Usually minutes; the
+timeout is 45, so a bad day at Apple fails the release instead of holding
+the runner.
+
+Stapling writes `Contents/CodeResources`, which only a release has, so the
+files list names it and `release-check` cannot see it go missing. The release
+workflow's last step checks the uploaded zip with `stapler validate` and
+`spctl` instead -- after publishing, there being no hook between archiving
+and uploading.
 
 Pushing the cask needs `HOMEBREW_TAP_TOKEN`, a PAT secret on this repo.
 `GITHUB_TOKEN` cannot push to the tap.

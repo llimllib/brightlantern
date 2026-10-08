@@ -1,0 +1,65 @@
+#!/usr/bin/env bash
+#MISE description="Notarize and staple a signed Bright Lantern.app (releases only)"
+#USAGE arg "<app>" help="the bundle mise-tasks/bundle signed"
+#USAGE arg "[mode]" default="dev" help="release notarizes; anything else does nothing"
+#
+# Apple scans the signed bundle, and stapling attaches its ticket to the
+# bundle so that Gatekeeper need not ask the network on first launch (#79). A
+# notarized but unstapled bundle works only online. That is why the release
+# is a bundle and not a tarball: a ticket cannot be stapled to a bare Mach-O.
+#
+# goreleaser calls this after mise-tasks/bundle, in the same post-build hook,
+# so the archive is made from the stapled bundle. Stapling writes
+# Contents/CodeResources, which the archive's files: list names for that
+# reason.
+#
+# Needs the App Store Connect API key from #87: MACOS_NOTARY_KEY (the .p8,
+# base64), MACOS_NOTARY_KEY_ID and MACOS_NOTARY_ISSUER_ID. A key rather than
+# an Apple ID and app password, which would carry a person's account.
+set -euo pipefail
+
+app="$1"
+mode="${2:-dev}"
+
+if [ "$mode" != release ]; then
+  echo "notarize: $mode build; not notarizing"
+  exit 0
+fi
+for v in MACOS_NOTARY_KEY MACOS_NOTARY_KEY_ID MACOS_NOTARY_ISSUER_ID; do
+  if [ -z "${!v:-}" ]; then
+    echo "notarize: $v is not set" >&2
+    exit 1
+  fi
+done
+
+tmp="$(mktemp -d)"
+trap 'rm -rf "$tmp"' EXIT
+printf '%s' "$MACOS_NOTARY_KEY" | base64 -D >"$tmp/key.p8"
+auth=(--key "$tmp/key.p8" --key-id "$MACOS_NOTARY_KEY_ID" --issuer "$MACOS_NOTARY_ISSUER_ID")
+
+# ditto, not zip: it keeps what codesign wrote the way Apple's tools expect,
+# and --keepParent puts the bundle at the archive's root.
+ditto -c -k --keepParent "$app" "$tmp/submit.zip"
+
+# Usually a few minutes, and Apple's service has bad days; the timeout is so a
+# bad day fails the release rather than holding the runner for six hours.
+xcrun notarytool submit "$tmp/submit.zip" "${auth[@]}" --wait --timeout 45m \
+  --output-format json >"$tmp/result.json" || true
+cat "$tmp/result.json"
+echo
+status="$(plutil -extract status raw -o - "$tmp/result.json" 2>/dev/null || echo unknown)"
+if [ "$status" != Accepted ]; then
+  # The log is the whole debugging loop: it names each file Apple rejected,
+  # and why -- a missing timestamp, hardened runtime, an unsigned nested file.
+  id="$(plutil -extract id raw -o - "$tmp/result.json" 2>/dev/null || true)"
+  if [ -n "$id" ]; then
+    xcrun notarytool log "$id" "${auth[@]}" || true
+  fi
+  echo "notarize: $status" >&2
+  exit 1
+fi
+
+xcrun stapler staple "$app"
+xcrun stapler validate "$app"
+# What a user's Mac will decide, asked before anything is published.
+spctl -a -vvv -t exec "$app"

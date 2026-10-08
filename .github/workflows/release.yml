@@ -122,6 +122,25 @@ jobs:
           # which GITHUB_TOKEN has no access to. A PAT with contents:write on
           # that repository.
           HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          # mise-tasks/notarize, from goreleaser's post-build hook (#79). The
+          # App Store Connect API key from #87; the .p8 is base64.
+          MACOS_NOTARY_KEY: ${{ secrets.MACOS_NOTARY_KEY }}
+          MACOS_NOTARY_KEY_ID: ${{ secrets.MACOS_NOTARY_KEY_ID }}
+          MACOS_NOTARY_ISSUER_ID: ${{ secrets.MACOS_NOTARY_ISSUER_ID }}
+
+      # The zip that was uploaded, as a user's Mac will see it. Notarize
+      # checked the bundle before archiving, but the ticket reaches the zip
+      # only through the files: list in .goreleaser.yaml, which release-check
+      # cannot test because snapshots are not notarized. After publishing,
+      # since goreleaser has no hook between archiving and uploading; a red
+      # release run is the alarm.
+      - name: Verify the published zip
+        run: |
+          d="$RUNNER_TEMP/published"
+          ditto -x -k dist/brightlantern_*_macos_arm64.zip "$d"
+          codesign --verify --strict --deep "$d/Bright Lantern.app"
+          xcrun stapler validate "$d/Bright Lantern.app"
+          spctl -a -vvv -t exec "$d/Bright Lantern.app"
 
       - name: Delete the signing keychain
         if: always()

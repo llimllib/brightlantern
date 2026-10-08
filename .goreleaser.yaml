@@ -65,6 +65,9 @@ builds:
         # release mode refuses to sign ad-hoc and takes a secure timestamp
         # (#78); a snapshot, as CI builds, is whatever the keychain allows.
         - mise-tasks/bundle "{{ dir (dir (dir .Path)) }}" {{ .Version }} {{ if .IsSnapshot }}snapshot{{ else }}release{{ end }}
+        # Before the archive, so it is made from the stapled bundle (#79).
+        # Does nothing for a snapshot.
+        - mise-tasks/notarize "{{ dir (dir (dir .Path)) }}" {{ if .IsSnapshot }}snapshot{{ else }}release{{ end }}
 
 archives:
   # The bundle and nothing else (#77): one artefact rather than a CLI
@@ -82,8 +85,13 @@ archives:
     #
     # dst names Contents because goreleaser strips the matches' common prefix,
     # which runs through Contents/.
+    #
+    # CodeResources is the notarization ticket, which only a release has:
+    # stapling writes it, and a snapshot is not notarized. release-check
+    # cannot see it go missing, so the release workflow checks the published
+    # zip with stapler.
     files:
-      - src: "dist/brightlantern_darwin_arm64_v8.0/Bright Lantern.app/Contents/{Info.plist,Library/**/*,Resources/*,_CodeSignature/*,MacOS/brightlantern-app,MacOS/brightlantern-apple,MacOS/lembed0.dylib}"
+      - src: "dist/brightlantern_darwin_arm64_v8.0/Bright Lantern.app/Contents/{Info.plist,CodeResources,Library/**/*,Resources/*,_CodeSignature/*,MacOS/brightlantern-app,MacOS/brightlantern-apple,MacOS/lembed0.dylib}"
         dst: "Bright Lantern.app/Contents"
 
 changelog:
@@ -125,37 +133,15 @@ homebrew_casks:
       name: goreleaserbot
       email: bot@goreleaser.com
     commit_msg_template: "Brew cask update for {{ .ProjectName }} version {{ .Tag }}"
-    # Homebrew quarantines cask artifacts by default -- that is what
-    # --no-quarantine exists to override -- and nothing here is signed by a
-    # Developer ID, only adhoc/linker-signed. Without this both files are
-    # refused: the binary dies with "Killed: 9" behind an "Apple could not
-    # verify" dialog, and the dylib fails dlopen with a misleading "no such
-    # file" that degrades silently to keyword-only search.
-    #
-    # Recursive over the whole bundle rather than naming the binary, which is
-    # where this differs from the other casks in the tap: the extension is
-    # dlopen'd and needs clearing just as much as the executable does. Over
-    # the bundle in appdir, not the staged path, which the app stanza has
-    # moved it out of.
-    #
-    # The real fix is a Developer ID signature and notarization (#78, #79),
-    # which delete this. That would also cover someone who downloads the zip
-    # directly, which this does not.
-    #
-    # The inner quoting is a Go template emitting a literal {{appdir}}, which
-    # is Homebrew's placeholder, not goreleaser's. postflight_steps rather
-    # than a postflight block, which Homebrew's style checks now reject.
+    # No quarantine workaround. Homebrew quarantines what it installs, and
+    # the bundle is signed, notarized and stapled (#78, #79), which is what
+    # Gatekeeper asks of a quarantined app. Until then a postflight ran
+    # `xattr -dr com.apple.quarantine` over it.
     #
     # The app stanza is written here because goreleaser's cask has no app
     # field (#77).
     custom_block: |
       app "Bright Lantern.app"
-
-      postflight_steps do
-        on_macos do
-          run "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "{{ "{{appdir}}" }}/Bright Lantern.app"]
-        end
-      end
     caveats: |
       Open Bright Lantern from Applications once. It finds your agent
       sessions, indexes them, and keeps indexing at login with no window
