@@ -42,8 +42,10 @@ attestation check. Its version is pinned equal to `package.json`'s
 `internal/web/static`, and `app.js` is generated, not committed.
 
 CI runs on `macos-26`, the release runner's image (#91), and builds and tests
-the app as well. Whether its virtual GPU can run llama.cpp's Metal backend is
-unknown; the semantic tests skip when it cannot -- see below.
+the app as well. Its virtual GPU does run llama.cpp's Metal backend, but a
+fresh VM pays for every model load: with the model installed, `internal/index`
+took 162s against 34s without. So CI installs the model only after `check`, and
+the semantic tests skip there; `mise run check` runs them on a real GPU.
 
 `setup` deletes its build tree when it finishes: building the fork leaves
 473MB behind to produce a 3.2MB dylib, and a rebuild from nothing is a minute.

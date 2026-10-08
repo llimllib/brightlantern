@@ -39,17 +39,14 @@ jobs:
           # mise gates behind this.
           experimental: true
 
-      # Asked of go rather than written down. The paths this used to name,
-      # ~/Library/Caches/go-build and ~/go/pkg/mod, are Go's defaults and where
-      # they are on a laptop, but the cache saved was 56MB with no modules in
-      # it: every run downloaded every dependency, twice over, since lint and
-      # test start together.
+      # Asked of go rather than written down, so a runner image that moves
+      # them cannot quietly empty the cache. A miss shows as every module
+      # downloaded twice, since lint and test start together.
       - name: Locate Go's caches
         id: go-env
         run: |
           echo "build=$(go env GOCACHE)" >> "$GITHUB_OUTPUT"
           echo "modules=$(go env GOMODCACHE)" >> "$GITHUB_OUTPUT"
-          echo "::notice title=Go caches::GOCACHE=$(go env GOCACHE) GOMODCACHE=$(go env GOMODCACHE)"
 
       # Modules, and the build cache: cgo, for mattn/go-sqlite3 and the
       # sqlite-vec bindings, is slow to compile and unchanged between runs.
@@ -59,23 +56,8 @@ jobs:
           path: |
             ${{ steps.go-env.outputs.build }}
             ${{ steps.go-env.outputs.modules }}
-          # v2: the entries under the old key hold the build cache alone, and
-          # an exact hit is never saved over.
           key: go-v2-${{ runner.os }}-${{ hashFiles('go.sum') }}
           restore-keys: go-v2-${{ runner.os }}-
-
-      # The model and the sqlite-lembed dylib: a 25MB download and a minute
-      # of llama.cpp, keyed on the script that makes them. Before check, so
-      # the semantic tests run if the runner reaches Metal and skip if not.
-      - name: Cache embedding model and extension
-        uses: actions/cache@v6
-        with:
-          path: |
-            ~/.local/share/brightlantern/lembed0.dylib
-            ~/.local/share/brightlantern/all-MiniLM-L6-v2.Q8_0.gguf
-          key: lembed-${{ runner.os }}-${{ hashFiles('mise-tasks/setup') }}
-
-      - run: mise run setup
 
       - run: pnpm install --frozen-lockfile
 
@@ -92,6 +74,24 @@ jobs:
       # neither of which any test would catch.
       - name: Smoke test
         run: ./brightlantern info
+
+      # The model and the sqlite-lembed dylib, for the app: a 25MB download
+      # and a minute of llama.cpp, keyed on the script that makes them.
+      #
+      # After check, deliberately. With the model installed the semantic tests
+      # run, and the runner's virtual GPU does run Metal -- but internal/index
+      # went from 34s to 162s, a fresh VM paying for every model load with no
+      # shader cache. `mise run check` runs them on every commit on a real
+      # GPU; here they skip, as they did on Linux.
+      - name: Cache embedding model and extension
+        uses: actions/cache@v6
+        with:
+          path: |
+            ~/.local/share/brightlantern/lembed0.dylib
+            ~/.local/share/brightlantern/all-MiniLM-L6-v2.Q8_0.gguf
+          key: lembed-${{ runner.os }}-${{ hashFiles('mise-tasks/setup') }}
+
+      - run: mise run setup
 
       # The app's logic that needs no window: registration decisions, the
       # startup pages, reading config.toml.
