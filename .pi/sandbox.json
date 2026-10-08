@@ -5,6 +5,18 @@
   "//4": "applespell is contacted incidentally by NaturalLanguage on init.",
   "//5": "Arrays are merged (union) with ~/.pi/agent/extensions/sandbox.json, so this is additive.",
   "network": {
+    "allowedDomains": [
+      "*.actions.githubusercontent.com",
+      "actions.githubusercontent.com",
+      "*.hf.co",
+      "us.aws.cdn.hf.co",
+      "*.huggingface.co",
+      "huggingface.co",
+      "*.sqlite.org",
+      "sqlite.org",
+      "*.blob.core.windows.net",
+      "blob.core.windows.net"
+    ],
     "allowMachLookup": [
       "com.apple.mobileassetd",
       "com.apple.mobileassetd.v2",
