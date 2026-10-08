@@ -21,7 +21,7 @@ func mainMenu(target: AppDelegate) -> NSMenu {
     // AppKit titles the application menu with CFBundleName whatever it is
     // given here; the items name the app themselves.
     let app = submenu(of: bar, titled: "Bright Lantern")
-    app.addItem(item("About Bright Lantern", #selector(NSApplication.orderFrontStandardAboutPanel(_:))))
+    app.addItem(item("About Bright Lantern", #selector(AppDelegate.showAbout(_:)), target: target))
     app.addItem(.separator())
     app.addItem(item("Hide Bright Lantern", #selector(NSApplication.hide(_:)), "h"))
     app.addItem(item("Hide Others", #selector(NSApplication.hideOtherApplications(_:)), "h", [.command, .option]))
@@ -61,6 +61,29 @@ func mainMenu(target: AppDelegate) -> NSMenu {
     NSApplication.shared.windowsMenu = window
 
     return bar
+}
+
+// The About panel's credits. The icon's licence requires the Flaticon line
+// (#92); the panel draws the icon from CFBundleIconFile on its own.
+func aboutCredits() -> NSAttributedString {
+    let credits = NSMutableAttributedString()
+    let font = NSFont.systemFont(ofSize: NSFont.smallSystemFontSize)
+    func add(_ text: String, link: String? = nil) {
+        var attributes: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: NSColor.labelColor]
+        if let link {
+            attributes[.link] = URL(string: link)
+        }
+        credits.append(NSAttributedString(string: text, attributes: attributes))
+    }
+    add("Designed and written by ")
+    add("Bill Mill", link: "https://billmill.org")
+    add("\n\n")
+    add("Fire lamp icons created by Eucalyp - Flaticon", link: "https://www.flaticon.com/free-icons/fire-lamp")
+
+    let centred = NSMutableParagraphStyle()
+    centred.alignment = .center
+    credits.addAttribute(.paragraphStyle, value: centred, range: NSRange(location: 0, length: credits.length))
+    return credits
 }
 
 @MainActor

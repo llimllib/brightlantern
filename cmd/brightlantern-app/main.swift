@@ -156,6 +156,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate {
         true
     }
 
+    // MARK: Application menu
+
+    @objc func showAbout(_ sender: Any?) {
+        NSApplication.shared.orderFrontStandardAboutPanel(options: [.credits: aboutCredits()])
+    }
+
     // MARK: View menu
 
     // reload() alone would reload a startup page, or nothing at all after a
