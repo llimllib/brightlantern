@@ -5,7 +5,7 @@ Search and read your coding agent sessions, from
 [Claude Code](https://claude.com/claude-code). Named for *Ctenoscopelus*, the
 bright lanternfish, which carries its own light through deep water.
 
-Formerly spireweb.
+<img width="1223" height="686" alt="Screenshot 2026-10-10 at 10 39 26 AM" src="https://github.com/user-attachments/assets/47ed8634-ee4d-4799-8258-d4a62ded2d30" />
 
 Local semantic search via [sqlite-vec](https://github.com/asg017/sqlite-vec) and
 [sqlite-lembed](https://github.com/landrix/sqlite-lembed/), combined with FTS5
