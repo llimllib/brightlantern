@@ -13,6 +13,9 @@ func TestClean(t *testing.T) {
 		{"Fixing the indexer.", "Fixing the indexer"},
 		{"  Fixing   the\n indexer  ", "Fixing the indexer"},
 		{"“Fixing the indexer”", "Fixing the indexer"},
+		{"`fix-log-level-env-var`", "fix-log-level-env-var"},
+		{"`main.go` infinite loop fix", "main.go infinite loop fix"},
+		{"`Get Info` fix for `.webm` files", "Get Info fix for .webm files"},
 		{"", ""},
 	}
 	for _, c := range cases {

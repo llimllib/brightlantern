@@ -120,6 +120,37 @@ func (d *DB) MarkTitleChecked(ctx context.Context, id string, nMsgs int) error {
 	return err
 }
 
+// Titles returns every stored title by session id.
+func (d *DB) Titles(ctx context.Context) (map[string]string, error) {
+	rows, err := d.sql.QueryContext(ctx,
+		`SELECT id, title FROM sessions WHERE title IS NOT NULL AND title <> ''`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	out := map[string]string{}
+	for rows.Next() {
+		var id, title string
+		if err := rows.Scan(&id, &title); err != nil {
+			return nil, err
+		}
+		out[id] = title
+	}
+	return out, rows.Err()
+}
+
+// ReplaceTitle rewrites a stored title in place.
+//
+// Leaves title_key and title_msgs alone: the title still answers for the same
+// prose, it is only spelled differently, so nothing about it needs paying for
+// again.
+func (d *DB) ReplaceTitle(ctx context.Context, id, title string) error {
+	_, err := d.sql.ExecContext(ctx,
+		`UPDATE sessions SET title = ? WHERE id = ?`, title, id)
+	return err
+}
+
 // CountTitledSessions reports how many sessions have a generated title.
 func (d *DB) CountTitledSessions(ctx context.Context) (int, error) {
 	var n int

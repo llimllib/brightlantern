@@ -77,6 +77,10 @@ func Run(ctx context.Context, db *index.DB, opts Options) (Progress, error) {
 		workers = DefaultConcurrency
 	}
 
+	if err := reclean(ctx, db); err != nil {
+		return Progress{}, err
+	}
+
 	candidates, err := db.TitleCandidates(ctx)
 	if err != nil {
 		return Progress{}, err
@@ -203,6 +207,28 @@ type result struct {
 // A session with no file here is read from the archive. Without that, one
 // merged from another machine with no title would fail on every run and be
 // retried on every run after, since a failure records nothing.
+// reclean passes every stored title through Clean again, so that a title
+// written before Clean learned a rule obeys it without being paid for twice --
+// and so does one merged in from an index that has not learned it yet.
+//
+// A changed title differs from its title chunk, which needsTitleChunks turns
+// into a full pass on the next build; nothing more is needed to reindex it.
+// A thousand rows read on each pass, and almost always none written.
+func reclean(ctx context.Context, db *index.DB) error {
+	stored, err := db.Titles(ctx)
+	if err != nil {
+		return err
+	}
+	for id, title := range stored {
+		if clean := Clean(title); clean != title && clean != "" {
+			if err := db.ReplaceTitle(ctx, id, clean); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
 func summarize(ctx context.Context, db *index.DB, s Summarizer, c index.TitleCandidate) result {
 	r := result{id: c.ID, nMsgs: c.NumMsgs}
 

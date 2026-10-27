@@ -156,6 +156,30 @@ func TestRunDoesNotResummarizeUnchangedSessions(t *testing.T) {
 	}
 }
 
+// A title stored before Clean learned a rule is rewritten by the next pass,
+// whether or not anything needs titling, and without calling the model.
+func TestRunRecleansStoredTitles(t *testing.T) {
+	db, _ := indexed(t, map[string][]string{"s1": {userMsg("alpha question")}})
+	f := &fake{}
+	if _, err := Run(context.Background(), db, Options{Summarizer: f}); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.ReplaceTitle(context.Background(), "s1", "`main.go` infinite loop fix"); err != nil {
+		t.Fatal(err)
+	}
+
+	p, err := Run(context.Background(), db, Options{Summarizer: f})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := titleOf(t, db, "s1"); got != "main.go infinite loop fix" {
+		t.Errorf("title = %q, want the backticks gone", got)
+	}
+	if n := f.calls.Load(); n != 1 || p.Total != 0 {
+		t.Errorf("summarizer calls = %d, candidates = %d; want 1 and 0", n, p.Total)
+	}
+}
+
 // The cheap half: a long session that grew is re-examined, but its opening
 // prose is past the slice bound and hashes the same, so it is not sent to the
 // model again. This is the case that matters -- a session someone is working
