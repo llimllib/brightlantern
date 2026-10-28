@@ -19,6 +19,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/llimllib/brightlantern/internal/api"
 	"github.com/llimllib/brightlantern/internal/index"
 	"github.com/llimllib/brightlantern/internal/indexer"
 	"github.com/llimllib/brightlantern/internal/render"
@@ -156,6 +157,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /search", s.handleSearch)
 	mux.HandleFunc("GET /status", s.handleStatus)
 	mux.HandleFunc("GET "+InstancePath, s.handleInstance)
+	mux.HandleFunc("GET "+api.SearchPath, s.handleAPISearch)
+	mux.HandleFunc("GET "+api.SessionsPath+"{id}", s.handleAPISession)
 	mux.HandleFunc("GET /sessions/{id}", s.handleSession)
 	mux.HandleFunc("GET /sessions/{id}/tool/{msg}/{blk}", s.handleTool)
 	mux.HandleFunc("GET /static/chroma.css", s.handleChromaCSS)

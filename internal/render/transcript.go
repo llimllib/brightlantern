@@ -260,16 +260,7 @@ func Tool(s *session.Session, msgIdx, blk int) (ToolDetail, error) {
 		if d.Diff, d.DiffTruncated = ParseDiff(res.Details); len(d.Diff) > 0 {
 			d.Args = ""
 		}
-		var b strings.Builder
-		for _, rb := range res.Content {
-			switch rb.Type {
-			case session.BlockText:
-				b.WriteString(rb.Text)
-			case session.BlockImage:
-				b.WriteString("[image]")
-			}
-		}
-		out := b.String()
+		out := ResultText(res)
 		d.FullBytes = len(out)
 		if len(out) > MaxOutputBytes {
 			d.Output = out[:runeSafeCut(out, MaxOutputBytes)]
@@ -279,6 +270,21 @@ func Tool(s *session.Session, msgIdx, blk int) (ToolDetail, error) {
 		}
 	}
 	return d, nil
+}
+
+// ResultText is a tool result's output as text, with an image standing in as
+// a placeholder rather than as its base64.
+func ResultText(res *session.Message) string {
+	var b strings.Builder
+	for _, rb := range res.Content {
+		switch rb.Type {
+		case session.BlockText:
+			b.WriteString(rb.Text)
+		case session.BlockImage:
+			b.WriteString("[image]")
+		}
+	}
+	return b.String()
 }
 
 // runeSafeCut returns the largest offset at or below limit that lands on a

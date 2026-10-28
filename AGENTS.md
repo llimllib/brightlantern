@@ -711,6 +711,37 @@ Four things that are true and worth not rediscovering:
   every keystroke, so `"deploy pip` is a state the parser has to hold an
   opinion about.
 
+## search and show
+
+`brightlantern search` and `show` are for agents first (#98, #99), and
+`internal/api` is the whole of them: the result types, the call into
+`SearchSessions`, the transcript walk, and the text both print. `/api/search`
+and `/api/sessions/{id}` serve the same types, so an answer is identical
+whichever path produced it.
+
+- **A server first, for the same index only.** It has the model warm;
+  opening it here is up to 15s on a cold shader cache, paid per search.
+  `serverFor` compares paths as `checkNoWriter` does.
+- **A 404 without our JSON error body is an old daemon**, not a missing
+  session: every daemon predates the API until an upgrade restarts it, and
+  the index is still there to open. `errNoAPI` falls back; a 404 *with* a
+  body ("no session with that id") is an answer.
+- **Message indexes are `msg_idx`** everywhere, so a search result's `msg`
+  feeds `show --around`. A title chunk's is `TitleMsgIdx` (-1), so a session
+  whose best chunk is its title points at the best matching message instead,
+  and at -1 when only the title matched.
+- **Tool output is brief by default**: six lines or 600 bytes, diffs 24
+  lines. Prose is a few percent of a session's bytes, and a transcript with
+  every result is mostly file dumps in an agent's context. There is no
+  per-tool endpoint: `--from M --to M+1 --tools full` is one message in full.
+- The transcript walks messages itself rather than through
+  `render.Transcript`, which renders HTML and has no output -- and
+  `render.Tool` per call rebuilds the result map each time.
+- Messages are marked with a rule and `**[N] role**`, not a heading: the prose
+  is markdown, and an assistant's own `## Findings` would read as a message.
+- Flags are parsed **interspersed** (`search xdist --limit 5`), which the
+  flag package does not do; `--` ends them, for a query starting with a dash.
+
 ## Rendering
 
 Transcripts are parsed from the `.jsonl` on demand, and from the archive only

@@ -65,6 +65,23 @@ without it, each session is listed under its opening message instead.
 `titles = "off"` in the config file does that on purpose, which is what Bright
 Lantern did for its first five milestones.
 
+## From the command line
+
+`brightlantern search` and `brightlantern show` do what the page does, as text,
+for reading in a terminal or for handing to an agent:
+
+```bash
+brightlantern search xdist            # sessions, best first, with the passage that matched
+brightlantern search '"fixture bugs"'  # a quoted phrase must appear exactly
+brightlantern show ID --around 183    # the messages around a match, as markdown
+brightlantern show ID --from -20      # how a session ended
+```
+
+Tool output is cut to its first lines unless `--tools full` is given, and
+`--json` prints data instead. Both ask the running server when there is one,
+which already has the embedding model loaded, and the same answers are at
+`/api/search?q=...` and `/api/sessions/ID`.
+
 ## The archive
 
 The index keeps every message of every session as its agent wrote it, so a

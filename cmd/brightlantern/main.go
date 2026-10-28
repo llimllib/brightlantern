@@ -29,6 +29,10 @@ usage:
   brightlantern [flags]         browse sessions in a web interface (same as serve)
   brightlantern serve [flags]   the same, named explicitly
   brightlantern index [flags]   build or update the search index
+  brightlantern search [flags] QUERY
+                           search sessions, as the web interface does
+  brightlantern show [flags] ID
+                           print a session as markdown
   brightlantern merge [flags] OTHER.db
                            fold another machine's index into this one
   brightlantern stats [flags]   report what is in the index
@@ -57,6 +61,17 @@ flags:
   --log PATH     append stdout and stderr to PATH; ~ is expanded
   --no-titles    do not generate session titles (same as titles = "off")
   --titles N     stop after generating N titles (0 for no limit)
+
+search and show ask a running server for the same index, and open the
+index themselves when there is none:
+  --limit N      search: how many sessions (default 10, at most 100)
+  --sort new     search: newest first rather than by relevance
+  --around N     show: the messages around message N, as a search
+                 result's "best match at message N"
+  --from N       show: start at message N; negative counts from the end
+  --to N         show: stop before message N
+  --tools MODE   show: brief (default), none, or full tool output
+  --json         print JSON rather than text
 `
 
 // command splits the subcommand from its flags, defaulting to serve.
@@ -97,6 +112,13 @@ func main() {
 	// possible -- newest sessions first, so it titles what is worth looking at
 	// -- before committing to all eleven hundred.
 	titleLimit := fs.Int("titles", 0, "stop after generating N titles")
+	limit := fs.Int("limit", 0, "search: how many sessions")
+	sortBy := fs.String("sort", "", "search: new for newest first")
+	around := fs.Int("around", 0, "show: the messages around this one")
+	from := fs.Int("from", 0, "show: first message")
+	to := fs.Int("to", 0, "show: stop before this message")
+	tools := fs.String("tools", "", "show: brief, none or full")
+	asJSON := fs.Bool("json", false, "print JSON")
 	fs.Usage = func() { fmt.Fprintf(os.Stderr, usage, index.DefaultPath()) }
 
 	var err error
@@ -124,6 +146,27 @@ func main() {
 		} else {
 			err = runIndex(s.dbPath, s.dirs, *full, *lexical, *titleLimit, s.titles)
 		}
+	case "search":
+		query := joinQuery(parseInterspersed(fs, args))
+		if query == "" {
+			fmt.Fprintln(os.Stderr, "usage: brightlantern search [--limit N] [--sort new] [--json] QUERY")
+			os.Exit(2)
+		}
+		given := givenFlags(fs)
+		err = runSearch(os.Stdout, configuredDB(given, *dbPath), configuredAddr(given, *addr), query,
+			searchOptions{limit: *limit, sort: *sortBy, json: *asJSON, lexical: *lexical})
+	case "show":
+		pos := parseInterspersed(fs, args)
+		if len(pos) != 1 {
+			fmt.Fprintln(os.Stderr, "usage: brightlantern show [--around N | --from N --to M] [--tools MODE] [--json] ID")
+			os.Exit(2)
+		}
+		given := givenFlags(fs)
+		o := showOptions{from: *from, to: *to, around: -1, tools: *tools, json: *asJSON}
+		if given["around"] {
+			o.around = *around
+		}
+		err = runShow(os.Stdout, configuredDB(given, *dbPath), configuredAddr(given, *addr), pos[0], o)
 	case "merge":
 		_ = fs.Parse(args)
 		if fs.NArg() != 1 {
