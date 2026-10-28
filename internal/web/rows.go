@@ -39,6 +39,20 @@ type row struct {
 	BestChunk search.ChunkID
 }
 
+// rowItem is what row.html renders: a row, and what the list around it says
+// about it. The status poll renders rows outside any list, so it cannot reach
+// for the page's fields the way list.html once did inline.
+type rowItem struct {
+	row
+	Selected   bool
+	Query      string
+	SortNewest bool
+}
+
+func newRowItem(r row, selected bool, query string, sortNewest bool) rowItem {
+	return rowItem{row: r, Selected: selected, Query: query, SortNewest: sortNewest}
+}
+
 // Subtitle overrides index.Summary.Subtitle for search results, replacing the
 // opening exchange with the text that actually matched.
 //

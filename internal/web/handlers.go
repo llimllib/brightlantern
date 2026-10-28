@@ -57,9 +57,10 @@ type pageData struct {
 	// the input rather than offering a box that silently does nothing.
 	SearchEnabled bool
 
-	// SessionCount is how many sessions were indexed when this page was
-	// built, so the status poll can report arrivals since then.
-	SessionCount int
+	// Arrived is the last arrivals seq when this page was built. The status
+	// poll carries it, and returns the sessions indexed since, so the list can
+	// show them without the server tracking what each tab has seen.
+	Arrived int64
 
 	// Transcript is nil when no session is open.
 	Transcript []render.Entry
@@ -91,13 +92,15 @@ func (s *Server) newPage(r *http.Request) (pageData, error) {
 	if sort != SortNewest {
 		sort = SortRelevance // one unknown value should not become a third mode
 	}
+	// Before the rows, so a session indexed in between is in the list and
+	// arrives again, rather than in neither; the page drops the duplicate.
+	// Ignored on failure: it drives a cosmetic affordance, and losing it
+	// should not cost the page.
+	arrived, _ := s.db.LastArrival(r.Context())
 	rows, err := s.rowsFor(r.Context(), q, sort)
 	if err != nil {
 		return pageData{}, err
 	}
-	// Ignored on failure: the count drives a cosmetic affordance, and losing
-	// it should not cost the page.
-	count, _ := s.db.CountSessions(r.Context())
 
 	data := pageData{
 		Sessions:      rows,
@@ -105,7 +108,7 @@ func (s *Server) newPage(r *http.Request) (pageData, error) {
 		Sort:          sort,
 		Searching:     strings.TrimSpace(q) != "",
 		SearchEnabled: s.engine.Load() != nil,
-		SessionCount:  count,
+		Arrived:       arrived,
 	}
 	if data.Searching && len(rows) == 0 {
 		data.EmptyNote = emptyNote(q)
@@ -116,6 +119,9 @@ func (s *Server) newPage(r *http.Request) (pageData, error) {
 // SortNewest reports whether the list is in date order, for the toggle's
 // active state.
 func (d pageData) SortNewest() bool { return d.Sort == SortNewest }
+
+// IsSelected reports whether id is the session in the reading pane.
+func (d pageData) IsSelected(id string) bool { return d.Selected != nil && d.Selected.ID == id }
 
 // emptyNote says why a search returned nothing.
 func emptyNote(query string) string {

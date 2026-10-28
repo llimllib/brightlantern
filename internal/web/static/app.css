@@ -176,6 +176,46 @@ body {
 .list {
   border-right: 1px solid var(--border);
   background: var(--bg-sunken);
+  /* app.ts holds the list still when sessions arrive above what is on
+     screen. Chrome and Firefox would do the same on their own, and the two
+     together move it twice; Safari would not do it at all. */
+  overflow-anchor: none;
+}
+
+.arrivals-note {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  height: 0;
+  display: flex;
+  justify-content: center;
+}
+
+.arrivals-note[hidden] { display: none; }
+
+.arrivals-note button {
+  margin-top: var(--space-2xs);
+  padding: var(--space-3xs) var(--space-xs);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--bg-raised);
+  color: var(--accent);
+  font: inherit;
+  font-size: var(--text-xs);
+  cursor: pointer;
+  box-shadow: 0 1px 3px rgb(0 0 0 / 0.15);
+}
+
+/* A row that arrived while the page was open, picked out briefly so that a
+   list changing on its own does not go unnoticed. */
+.row.is-arrived { animation: arrived 2.5s ease-out; }
+
+@keyframes arrived {
+  from { background: var(--bg-raised); box-shadow: inset 3px 0 var(--accent); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .row.is-arrived { animation: none; }
 }
 
 /* ---------- list rows ---------- */

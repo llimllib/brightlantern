@@ -455,8 +455,33 @@ session is indexed is safe; anything about whether it is indexed is not.
 
 The header polls `/status`, which **replaces itself**, so the server picks the
 next interval (2s busy, 10s idle) rather than the page choosing once at load.
-The page seeds the poll with the session count it rendered with, which is how
-"3 new sessions" works without the server tracking per-client state.
+The page seeds the poll with a watermark, and each poll returns the sessions
+indexed since as rows, which app.ts places in the list (#95). No per-client
+state: the watermark is in the element the poll replaces.
+
+The watermark is `arrivals.seq`, not `started_at`, and not a count. A cold
+build indexes files in discovery order, so once the newest session is in,
+nothing older would ever be "after" it -- and that is every first run, with
+someone watching the page fill. `arrivals` is filled by an `AFTER INSERT`
+trigger on `sessions`, so Build, the watcher, merge and older binaries all
+count, which matters given the paragraph above. A table rather than a column
+because the first migration would make `merge` refuse every older index.
+An upsert resolving to `DO UPDATE` does not fire it: a session that grows by a
+message does not arrive again.
+
+The page records the watermark **before** listing, so a session indexed in
+between arrives twice and is deduplicated, instead of not at all. Rows are
+placed by date, and the list holds still -- compensating `scrollTop`, with
+`overflow-anchor: none` so Chrome does not compensate as well -- whenever it
+is scrolled, hovered or focused; what lands out of sight is counted in
+`.arrivals-note`. What holds still is the cursor's row, else the hovered
+row, else the top one: holding only the top row let a session dated between
+it and the cursor push the cursor's row down. Out of sight allows a pixel of
+`slack`, because row heights are fractional and `scrollTop` is not, and a
+row moved its own height up left 0.016px showing -- which counted as
+visible and kept the note from ever appearing. Only a list marked `data-browsing` takes arrivals: typing a
+search swaps `#rows` without the poll knowing, so the page decides. A search
+counts them instead, until #96.
 
 The engine changes exactly once: lexical when the server starts answering,
 lexical plus semantic once `warm` has loaded the model into its own reader
@@ -808,6 +833,27 @@ committed for a reason: the tests assert which
 session is newest and how many rows a filter leaves, and neither survives
 contact with a real corpus. `e2e-charlie` is 41 messages with one occurrence of
 "quicksand" at the end, so the scroll-to-match test starts below the fold.
+
+`arrivals.spec.ts` runs against a **second server**, which watches a copy of
+the fixtures plus twenty filler sessions in a temp directory (`e2e/watched.ts`
+says where). Separate because an arrival is permanent -- the index keeps a
+session whose file is gone -- and would be a fourth row in every smoke test
+that counts three; the fillers because holding the list still is only
+observable in a list that scrolls. Its tests name sessions uniquely and assert
+relative order, since they share that server and a reused one keeps every
+earlier run's arrivals. Each waits out the watcher's settle and an idle poll,
+~12s. The servers start one after the other, and each builds its binary into
+its own temp directory so the second build does not replace the first's.
+
+Both servers run **`--lexical`**. The tests count the rows a search leaves,
+and the semantic ranker returns neighbours with no threshold: on a machine
+where the model loads, every fixture matches "flexbox", and a test passed or
+failed by whether its search ran before the model finished loading.
+`BRIGHTLANTERN_DATA_DIR` cannot do this -- it is first in the lookup, not
+the only place looked.
+
+A run killed part way leaves its servers on 18123 and 18124, and
+`reuseExistingServer` will then test the stale binary. Kill them first.
 
 These tests are only worth their weight if they fail when the behaviour breaks,
 which is worth re-checking after editing them: disabling `scrollToMatch()` and

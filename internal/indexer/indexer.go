@@ -41,8 +41,9 @@ type Status struct {
 	Done  int
 	Total int
 
-	// Sessions is how many sessions are currently indexed. The list pane
-	// compares it against the count it rendered with to notice new arrivals.
+	// Sessions is how many sessions are currently indexed. The page no
+	// longer reads it -- arrivals come from the index, by seq (#95) -- and
+	// the tests use it to watch indexing land.
 	Sessions int
 
 	Chunks  int

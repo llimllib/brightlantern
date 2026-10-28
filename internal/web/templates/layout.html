@@ -41,16 +41,22 @@
 
   {{ template "sortbar.html" . }}
 
-  {{- /* Seeded server-side with the count this page rendered with, so the
-         poll can report new sessions without per-client state. */ -}}
+  {{- /* Seeded with the last arrival this page rendered with, so the poll
+         can return what arrived since without per-client state. */ -}}
   <div class="status" id="status"
-       hx-get="/status?n={{.SessionCount}}"
+       hx-get="/status?since={{.Arrived}}"
        hx-trigger="load"
        hx-swap="outerHTML"></div>
 </header>
 
 <main class="panes">
   <nav class="list" aria-label="Sessions">
+    {{- /* Sessions that arrived out of sight: above the top of the pane, or
+           while a search is showing. app.ts fills it in. Zero height and
+           sticky, so appearing does not itself push the rows down. */}}
+    <div class="arrivals-note" hidden aria-live="polite">
+      <button type="button"></button>
+    </div>
     {{- template "list.html" . }}
   </nav>
 

@@ -1,0 +1,23 @@
+{{define "row.html" -}}
+{{- /* One row of the list pane, given a rowItem. Shared by the list and by the
+       status poll, which delivers rows for sessions that arrived after the
+       page rendered.
+
+       data-id is what the page dedupes arrivals against, and the <time>'s
+       datetime is what it orders them by: UTC to the second, so it compares
+       as text, the same way the list's ORDER BY does. */ -}}
+<li data-id="{{.ID}}">
+  {{- /* The query rides along so that opening a result keeps the filtered
+         list beside it, and going back returns to the same search. */ -}}
+  <a class="row{{if .Selected}} is-selected{{end}}"
+     href="/sessions/{{.ID}}{{if .Query}}?q={{.Query}}{{if .SortNewest}}&amp;sort=new{{end}}{{end}}"
+     {{- if .Selected}} aria-current="page"{{end}}>
+    <span class="row-meta">
+      <span class="row-project" title="{{.CWD}}">{{.Project}}</span>
+      <time class="row-date" datetime="{{rfc3339 .StartedAt}}">{{date .StartedAt}}</time>
+    </span>
+    <span class="row-title">{{.Heading}}</span>
+    <span class="row-preview">{{.Subtitle}}</span>
+  </a>
+</li>
+{{- end}}

@@ -109,6 +109,29 @@ CREATE VIRTUAL TABLE IF NOT EXISTS chunks_fts USING fts5(
 );
 
 CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+
+-- The order sessions first entered this index, which is how an open page
+-- learns what arrived after it rendered: it carries the last seq it saw, and
+-- asks for anything later. started_at cannot answer that -- a cold build
+-- indexes in whatever order it finds files, and once the newest session is in,
+-- nothing older is "after" it -- and sessions.rowid can be renumbered by
+-- VACUUM. AUTOINCREMENT, for the same reason as chunks: a seq freed by a
+-- delete is never handed out again, so a watermark never skips a new session.
+--
+-- A table and a trigger rather than a column, so that every insert into
+-- sessions is counted whichever path made it -- Build, the watcher, merge, or
+-- an older binary writing to this file -- and so that the layout of sessions,
+-- which merge reads from another index by name, does not change. Sessions
+-- indexed before this table existed have no row, which is right: none of them
+-- is new. An upsert that resolves to DO UPDATE does not fire AFTER INSERT, so
+-- a session growing by a message keeps its place.
+CREATE TABLE IF NOT EXISTS arrivals (
+  seq         INTEGER PRIMARY KEY AUTOINCREMENT,
+  session_id  TEXT NOT NULL UNIQUE REFERENCES sessions(id) ON DELETE CASCADE
+);
+CREATE TRIGGER IF NOT EXISTS sessions_arrive AFTER INSERT ON sessions BEGIN
+  INSERT OR IGNORE INTO arrivals(session_id) VALUES (NEW.id);
+END;
 `
 
 // views are recreated on every open rather than created if missing. A view

@@ -72,11 +72,13 @@ func ScanSummary(rows interface{ Scan(...any) error }) (Summary, error) {
 	return scanSummary(rows)
 }
 
-func scanSummary(rows interface{ Scan(...any) error }) (Summary, error) {
+// scanSummary reads the SummaryColumns, after any columns selected ahead of
+// them into lead.
+func scanSummary(rows interface{ Scan(...any) error }, lead ...any) (Summary, error) {
 	var s Summary
 	var startedAt string
-	err := rows.Scan(&s.ID, &s.Project, &s.CWD, &s.Path, &s.Host, &startedAt,
-		&s.NumMsgs, &s.Title, &s.Preview, &s.Reply)
+	err := rows.Scan(append(lead, &s.ID, &s.Project, &s.CWD, &s.Path, &s.Host, &startedAt,
+		&s.NumMsgs, &s.Title, &s.Preview, &s.Reply)...)
 	if err != nil {
 		return s, err
 	}
@@ -119,6 +121,44 @@ func (d *DB) Session(ctx context.Context, id string) (Summary, error) {
 		return s, fmt.Errorf("%q: %w", id, ErrNotFound)
 	}
 	return s, err
+}
+
+// LastArrival is the newest seq in arrivals, or 0 when nothing has arrived
+// since the table was created. A page records it before listing sessions, so
+// that one indexed in between turns up in both rather than in neither.
+func (d *DB) LastArrival(ctx context.Context) (int64, error) {
+	var seq int64
+	err := d.sql.QueryRowContext(ctx,
+		`SELECT COALESCE(MAX(seq), 0) FROM arrivals`).Scan(&seq)
+	return seq, err
+}
+
+// ArrivedSince returns sessions that entered the index after seq, in the order
+// they arrived, at most limit of them, and the seq of the last one returned --
+// seq itself when there are none, so the caller can always carry it forward.
+func (d *DB) ArrivedSince(ctx context.Context, seq int64, limit int) ([]Summary, int64, error) {
+	rows, err := d.sql.QueryContext(ctx,
+		`SELECT a.seq, `+SummaryColumns("s")+`
+		 FROM arrivals a JOIN sessions s ON s.id = a.session_id
+		 WHERE a.seq > ? ORDER BY a.seq LIMIT ?`, seq, limit)
+	if err != nil {
+		return nil, seq, err
+	}
+	defer rows.Close()
+
+	var out []Summary
+	last := seq
+	for rows.Next() {
+		s, err := scanSummary(rows, &last)
+		if err != nil {
+			return nil, seq, err
+		}
+		out = append(out, s)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, seq, err
+	}
+	return out, last, nil
 }
 
 // CountSessions reports how many sessions are indexed.

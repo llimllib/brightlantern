@@ -3,7 +3,8 @@
 // Deliberately small. HTMX drives search and lazy tool expansion, <details>
 // handles collapsing, and navigation is plain links, so the only things left
 // for JavaScript are the ones the platform genuinely lacks: keyboard
-// navigation, scroll restoration, and the clipboard.
+// navigation, scroll restoration, placing sessions that arrive while the page
+// is open, and the clipboard.
 
 const listPane = () => document.querySelector<HTMLElement>(".list");
 const rowLinks = () =>
@@ -100,11 +101,66 @@ function scrollKey(): string {
   return `brightlantern:list-scroll:${q}`;
 }
 
+/**
+ * Saved as the row at the top of the pane and how far it sat from the top,
+ * not as a pixel offset. Sessions arrive between page loads, and the next
+ * page renders them, so the same scrollTop would land on different rows.
+ */
+interface SavedScroll {
+  id: string;
+  offset: number;
+}
+
+/** The first row whose bottom edge is inside the pane. */
+function topVisibleRow(pane: HTMLElement): HTMLLIElement | null {
+  const top = pane.getBoundingClientRect().top;
+  for (const li of pane.querySelectorAll<HTMLLIElement>("#rows > li[data-id]")) {
+    if (li.getBoundingClientRect().bottom > top + slack) return li;
+  }
+  return null;
+}
+
+/**
+ * Below this many pixels of a row showing, it is out of sight. Row heights
+ * are fractional and scrollTop often is not, so a row moved exactly its own
+ * height above the pane can leave a hundredth of a pixel inside it -- which
+ * counted as visible and kept the arrivals note from ever appearing.
+ */
+const slack = 1;
+
+/**
+ * The row that has to stay where it is when rows arrive: the one with the
+ * keyboard cursor, else the one under the pointer, else the top one on
+ * screen. Not always the top one: an arrival dated between the top row and
+ * the cursor would otherwise push the cursor's row down, and a click aimed at
+ * the hovered row would land on its neighbour. Only a row on screen counts,
+ * since keeping an off-screen one still would let the visible rows move.
+ */
+function anchorRow(pane: HTMLElement): HTMLLIElement | null {
+  const p = pane.getBoundingClientRect();
+  const onScreen = (li: HTMLLIElement | null | undefined): li is HTMLLIElement => {
+    if (!li) return false;
+    const r = li.getBoundingClientRect();
+    return r.bottom > p.top + slack && r.top < p.bottom - slack;
+  };
+  const focused = document.activeElement?.closest<HTMLLIElement>("#rows > li[data-id]");
+  if (onScreen(focused)) return focused;
+  const hovered = pane.querySelector<HTMLLIElement>("#rows > li[data-id]:hover");
+  if (onScreen(hovered)) return hovered;
+  return topVisibleRow(pane);
+}
+
 function saveScroll(): void {
   const pane = listPane();
   if (!pane) return;
+  const li = topVisibleRow(pane);
+  if (!li?.dataset.id) return;
+  const saved: SavedScroll = {
+    id: li.dataset.id,
+    offset: li.getBoundingClientRect().top - pane.getBoundingClientRect().top,
+  };
   try {
-    sessionStorage.setItem(scrollKey(), String(pane.scrollTop));
+    sessionStorage.setItem(scrollKey(), JSON.stringify(saved));
   } catch {
     // Private browsing, or a full quota. Losing a scroll position is not
     // worth an error.
@@ -114,16 +170,187 @@ function saveScroll(): void {
 function restoreScroll(): void {
   const pane = listPane();
   if (!pane) return;
-  let saved: string | null = null;
+  let saved: SavedScroll | null = null;
   try {
-    saved = sessionStorage.getItem(scrollKey());
+    const raw = sessionStorage.getItem(scrollKey());
+    if (raw !== null) saved = JSON.parse(raw) as SavedScroll;
   } catch {
+    // Unreadable, or a bare number saved by an older page. Starting at the
+    // top once is the whole cost.
     return;
   }
-  if (saved === null) return;
+  if (!saved || typeof saved.id !== "string") return;
 
-  const top = Number(saved);
-  if (Number.isFinite(top)) pane.scrollTop = top;
+  const li = rowByID(saved.id);
+  if (!li) return;
+  pane.scrollTop +=
+    li.getBoundingClientRect().top - pane.getBoundingClientRect().top - saved.offset;
+}
+
+function rowByID(id: string): HTMLLIElement | null {
+  for (const li of document.querySelectorAll<HTMLLIElement>("#rows > li[data-id]")) {
+    if (li.dataset.id === id) return li;
+  }
+  return null;
+}
+
+// ---------------------------------------------------------------- arrivals
+
+/**
+ * The status poll delivers rows for sessions indexed since the page rendered,
+ * in a <template> inside #status. They go into the list where its order puts
+ * them -- newest first -- without moving anything someone is looking at.
+ *
+ * Only the unfiltered list takes them. A search's results are ranked, and
+ * whether a new session belongs in them at all is a question for the server
+ * (#96); until then, a search page counts arrivals instead and offers to go
+ * to them.
+ */
+function placeArrivals(status: HTMLElement): void {
+  const template = status.querySelector<HTMLTemplateElement>("template.arrivals");
+  if (!template) return;
+  template.remove();
+
+  const list = document.querySelector<HTMLOListElement>("#rows");
+  const pane = listPane();
+  if (!list || !pane) return;
+
+  // Keyed once per poll: a cold build can deliver a thousand rows into a
+  // list of a thousand, and a scan per arrival would be a million lookups.
+  const keyed = Array.from(
+    list.querySelectorAll<HTMLLIElement>(":scope > li[data-id]"),
+    (li) => ({ li, key: sortKey(li) }),
+  );
+  const have = new Set(keyed.map((k) => k.key.id));
+
+  // The page records its watermark before listing sessions, so one indexed
+  // in between arrives already on screen.
+  const arrived = Array.from(
+    template.content.querySelectorAll<HTMLLIElement>("li[data-id]"),
+  ).filter((li) => !have.has(li.dataset.id ?? ""));
+  if (arrived.length === 0) return;
+
+  if (!list.hasAttribute("data-browsing")) {
+    for (const li of arrived) if (li.dataset.id) unplaced.add(li.dataset.id);
+    updateArrivalsNote();
+    return;
+  }
+
+  // Hold still unless nobody is looking: someone scrolled down, reading with
+  // the pointer over the list, or moving through it with the keyboard would
+  // otherwise see every row jump down by one. Measured against anchorRow, so
+  // a row placed below it costs nothing.
+  const hold =
+    pane.scrollTop > 0 || pane.matches(":hover") || pane.contains(document.activeElement);
+  const anchor = anchorRow(pane);
+  const before = anchor?.getBoundingClientRect().top;
+
+  list.querySelector(":scope > li.empty")?.remove();
+  for (const li of arrived) {
+    li.querySelector(".row")?.classList.add("is-arrived");
+    const key = sortKey(li);
+    const at = position(keyed, key);
+    list.insertBefore(li, keyed[at]?.li ?? null);
+    keyed.splice(at, 0, { li, key });
+  }
+
+  if (hold && anchor && before !== undefined) {
+    pane.scrollTop += anchor.getBoundingClientRect().top - before;
+  }
+  // Whatever landed above the pane's top edge is out of sight, and gets
+  // counted until it is scrolled into view.
+  const top = pane.getBoundingClientRect().top;
+  for (const li of arrived) {
+    if (li.getBoundingClientRect().bottom <= top + slack) watchAbove(li);
+  }
+}
+
+interface SortKey {
+  at: string;
+  id: string;
+}
+
+/**
+ * Where a row with this key goes among rows already in the list's order:
+ * started_at descending, then id ascending, as ListSessions sorts.
+ * datetime is RFC 3339 in UTC, to the second, so it compares as text.
+ */
+function position(keyed: { key: SortKey }[], key: SortKey): number {
+  let lo = 0;
+  let hi = keyed.length;
+  while (lo < hi) {
+    const mid = (lo + hi) >>> 1;
+    const k = keyed[mid]!.key;
+    const after = k.at < key.at || (k.at === key.at && k.id > key.id);
+    if (after) hi = mid;
+    else lo = mid + 1;
+  }
+  return lo;
+}
+
+function sortKey(li: HTMLLIElement): SortKey {
+  return {
+    at: li.querySelector("time")?.getAttribute("datetime") ?? "",
+    id: li.dataset.id ?? "",
+  };
+}
+
+// Arrivals that are not on screen: above the pane when browsing, or not in
+// the list at all when searching. The note says how many, and goes to them.
+const above = new Set<HTMLLIElement>();
+const unplaced = new Set<string>();
+let aboveObserver: IntersectionObserver | null = null;
+
+function watchAbove(li: HTMLLIElement): void {
+  const pane = listPane();
+  if (!pane) return;
+  aboveObserver ??= new IntersectionObserver(
+    (entries) => {
+      for (const entry of entries) {
+        // Half in sight, not merely touching: see slack.
+        if (entry.intersectionRatio < 0.5) continue;
+        above.delete(entry.target as HTMLLIElement);
+        aboveObserver?.unobserve(entry.target);
+      }
+      updateArrivalsNote();
+    },
+    { root: pane, threshold: 0.5 },
+  );
+  above.add(li);
+  aboveObserver.observe(li);
+  updateArrivalsNote();
+}
+
+function forgetArrivals(): void {
+  aboveObserver?.disconnect();
+  above.clear();
+  unplaced.clear();
+  updateArrivalsNote();
+}
+
+function updateArrivalsNote(): void {
+  const note = document.querySelector<HTMLElement>(".arrivals-note");
+  const button = note?.querySelector("button");
+  if (!note || !button) return;
+
+  const n = above.size || unplaced.size;
+  note.hidden = n === 0;
+  if (n === 0) return;
+  const noun = `${n} new session${n === 1 ? "" : "s"}`;
+  button.textContent = above.size ? `\u2191 ${noun}` : noun;
+}
+
+function onArrivalsNote(): void {
+  if (above.size) {
+    // The topmost of them, which brings the rest into view on the way.
+    const first = Array.from(above).sort((a, b) =>
+      a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1,
+    )[0];
+    first?.scrollIntoView({ block: "start", behavior: "smooth" });
+    return;
+  }
+  // From a search, the sessions are in the list a search is not showing.
+  location.href = "/";
 }
 
 // --------------------------------------------------------------- match scroll
@@ -313,6 +540,17 @@ function init(): void {
     .querySelector<HTMLButtonElement>("#help-open")
     ?.addEventListener("click", toggleHelp);
 
+  document
+    .querySelector<HTMLButtonElement>(".arrivals-note button")
+    ?.addEventListener("click", onArrivalsNote);
+
+  // htmx:load fires for each element a swap adds, and the poll's response
+  // is a new #status.
+  document.body.addEventListener("htmx:load", (event) => {
+    const elt = (event as CustomEvent<{ elt: Element }>).detail.elt;
+    if (elt instanceof HTMLElement && elt.id === "status") placeArrivals(elt);
+  });
+
   // Delegated, so one listener covers every turn in however long a session.
   document.addEventListener("click", (event) => {
     const target = event.target;
@@ -331,6 +569,9 @@ function init(): void {
     const target = (event as CustomEvent).target;
     if (target instanceof HTMLElement && target.id === "rows") {
       listPane()?.scrollTo({ top: 0 });
+      // The server rendered this list after every arrival counted so far,
+      // so they are in it, or are not meant to be.
+      forgetArrivals();
     }
   });
 }

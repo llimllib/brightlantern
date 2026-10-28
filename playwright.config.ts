@@ -1,4 +1,5 @@
 import { defineConfig, devices } from "@playwright/test";
+import { watchedDir, watchedPort, watchedURL } from "./e2e/watched";
 
 // Fixed rather than ephemeral: Playwright has to know the URL before the
 // server exists in order to wait for it.
@@ -33,21 +34,34 @@ export default defineConfig({
     trace: "retain-on-failure",
   },
 
-  webServer: {
-    command: `./e2e/serve.sh ${port}`,
-    // Readiness is judged by this URL answering, and so is "a server is
-    // already running" when reuseExistingServer is on. / is answered by
-    // anything listening on the port; app.js only by brightlantern, so a stranger
-    // on the port is not mistaken for it and serve.sh fails loudly on the
-    // bind instead.
-    url: `${baseURL}/static/app.js`,
-    // Reuse a server already on the port while developing; never in CI, where
-    // a stale one would mean testing the wrong binary.
-    reuseExistingServer: !process.env.CI,
-    stdout: "pipe",
-    stderr: "pipe",
-    // Cold, this compiles TypeScript, builds a cgo binary, and indexes the
-    // fixtures.
-    timeout: 180_000,
-  },
+  // Started one after the other, each waited for before the next begins, so
+  // the two builds in serve.sh do not race.
+  webServer: [
+    {
+      command: `./e2e/serve.sh ${port}`,
+      // Readiness is judged by this URL answering, and so is "a server is
+      // already running" when reuseExistingServer is on. / is answered by
+      // anything listening on the port; app.js only by brightlantern, so a
+      // stranger on the port is not mistaken for it and serve.sh fails loudly
+      // on the bind instead.
+      url: `${baseURL}/static/app.js`,
+      // Reuse a server already on the port while developing; never in CI,
+      // where a stale one would mean testing the wrong binary.
+      reuseExistingServer: !process.env.CI,
+      stdout: "pipe",
+      stderr: "pipe",
+      // Cold, this compiles TypeScript, builds a cgo binary, and indexes the
+      // fixtures.
+      timeout: 180_000,
+    },
+    {
+      // Watching a copy of the fixtures, for arrivals.spec.ts.
+      command: `./e2e/serve.sh ${watchedPort} ${watchedDir}`,
+      url: `${watchedURL}/static/app.js`,
+      reuseExistingServer: !process.env.CI,
+      stdout: "pipe",
+      stderr: "pipe",
+      timeout: 180_000,
+    },
+  ],
 });

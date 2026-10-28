@@ -1,11 +1,19 @@
 package web
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/PuerkitoBio/goquery"
+
+	"github.com/llimllib/brightlantern/internal/index"
 	"github.com/llimllib/brightlantern/internal/indexer"
 )
 
@@ -77,46 +85,123 @@ func TestStatusDistinguishesTitlingFromIndexing(t *testing.T) {
 	}
 }
 
-// Rather than the server tracking what each open tab has seen, the page
-// carries the count it rendered with and the poll compares against it.
-func TestStatusReportsNewSessions(t *testing.T) {
-	f := newFixture(t, map[string][]string{"aaa": {userMsg("hi")}})
-	f.withIndexer(t, indexer.Status{Phase: indexer.PhaseWatching, Sessions: 5})
-
-	_, doc := f.get(t, "/status?n=2")
-	link := doc.Find("#status a")
-	if link.Length() != 1 {
-		t.Fatalf("no refresh link; status was %q", doc.Find("#status").Text())
+// addSession writes a session file and indexes it, the way the watcher does
+// while a page is open.
+func (f *fixture) addSession(t *testing.T, id string, started time.Time, msgs ...string) {
+	t.Helper()
+	header := `{"type":"session","version":3,"id":"` + id +
+		`","timestamp":"` + started.UTC().Format(time.RFC3339) + `","cwd":"/Users/me/code/proj"}`
+	body := header + "\n" + strings.Join(msgs, "\n") + "\n"
+	if err := os.WriteFile(filepath.Join(f.dir, id+".jsonl"), []byte(body), 0o644); err != nil {
+		t.Fatal(err)
 	}
-	if got := strings.TrimSpace(link.Text()); got != "3 new sessions" {
-		t.Errorf("link text = %q", got)
+	db, err := index.Open(f.dbPath, index.DriverName)
+	if err != nil {
+		t.Fatal(err)
 	}
-
-	// Singular, because "1 new sessions" is the kind of thing that makes an
-	// interface feel unfinished.
-	f.withIndexer(t, indexer.Status{Phase: indexer.PhaseWatching, Sessions: 3})
-	_, doc = f.get(t, "/status?n=2")
-	if got := strings.TrimSpace(doc.Find("#status a").Text()); got != "1 new session" {
-		t.Errorf("link text = %q, want singular", got)
-	}
-
-	// Nothing new: no link, and no stale count left behind.
-	f.withIndexer(t, indexer.Status{Phase: indexer.PhaseWatching, Sessions: 2})
-	_, doc = f.get(t, "/status?n=2")
-	if doc.Find("#status a").Length() != 0 {
-		t.Error("reported new sessions when there were none")
+	defer db.Close()
+	if _, err := index.Build(context.Background(), db, index.BuildOptions{Dirs: []string{f.dir}}); err != nil {
+		t.Fatal(err)
 	}
 }
 
-func TestStatusCarriesTheRenderedCountForward(t *testing.T) {
-	f := newFixture(t, map[string][]string{"aaa": {userMsg("hi")}})
-	f.withIndexer(t, indexer.Status{Phase: indexer.PhaseWatching, Sessions: 9})
+func arrivalIDs(doc *goquery.Document) []string {
+	// A <template>'s children are its content, which goquery parses as
+	// ordinary descendants.
+	var ids []string
+	doc.Find("#status template.arrivals li[data-id]").Each(func(_ int, li *goquery.Selection) {
+		id, _ := li.Attr("data-id")
+		ids = append(ids, id)
+	})
+	return ids
+}
 
-	_, doc := f.get(t, "/status?n=4")
-	// Each poll replaces the element, so the next poll's URL has to keep the
-	// count or the comparison is lost after the first tick.
-	if got, _ := doc.Find("#status").Attr("hx-get"); got != "/status?n=4" {
-		t.Errorf("hx-get = %q, want the count preserved", got)
+func sinceOf(t *testing.T, doc *goquery.Document) string {
+	t.Helper()
+	got, _ := doc.Find("#status").Attr("hx-get")
+	u, err := url.Parse(got)
+	if err != nil {
+		t.Fatalf("hx-get %q: %v", got, err)
+	}
+	return u.Query().Get("since")
+}
+
+// Rather than the server tracking what each open tab has seen, the page
+// carries the last arrival it rendered with and the poll returns what came
+// after, as rows ready to place.
+func TestStatusDeliversArrivals(t *testing.T) {
+	f := newFixture(t, map[string][]string{"aaa": {userMsg("hi")}})
+	f.withIndexer(t, indexer.Status{Phase: indexer.PhaseWatching})
+
+	_, page := f.get(t, "/")
+	seed, _ := page.Find("#status").Attr("hx-get")
+
+	// Nothing new yet: no rows, and the watermark carried forward unchanged.
+	_, doc := f.get(t, seed)
+	if ids := arrivalIDs(doc); len(ids) != 0 {
+		t.Errorf("arrivals before anything arrived: %v", ids)
+	}
+	if got, _ := doc.Find("#status").Attr("hx-get"); got != seed {
+		t.Errorf("hx-get = %q, want %q carried forward", got, seed)
+	}
+
+	// Older than everything on the page, which is the case a started_at
+	// watermark would miss: a catch-up build finds files in any order.
+	f.addSession(t, "old", time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC), userMsg("from before"))
+	_, doc = f.get(t, seed)
+	if ids := arrivalIDs(doc); len(ids) != 1 || ids[0] != "old" {
+		t.Fatalf("arrivals = %v, want [old]", ids)
+	}
+	li := doc.Find("#status template.arrivals li").First()
+	if href, _ := li.Find("a.row").Attr("href"); href != "/sessions/old" {
+		t.Errorf("arrival href = %q", href)
+	}
+	if dt, _ := li.Find("time.row-date").Attr("datetime"); dt != "2020-01-01T00:00:00Z" {
+		t.Errorf("arrival datetime = %q, which is what the page orders by", dt)
+	}
+
+	// The watermark advanced past it, so the next poll does not deliver it
+	// again.
+	next := sinceOf(t, doc)
+	if next == sinceOf(t, page) {
+		t.Fatal("watermark did not advance")
+	}
+	_, doc = f.get(t, "/status?since="+next)
+	if ids := arrivalIDs(doc); len(ids) != 0 {
+		t.Errorf("delivered again: %v", ids)
+	}
+}
+
+// A session that gains a message is reindexed, but it is not new.
+func TestStatusDoesNotDeliverGrownSessions(t *testing.T) {
+	f := newFixture(t, map[string][]string{"aaa": {userMsg("hi")}})
+	f.withIndexer(t, indexer.Status{Phase: indexer.PhaseWatching})
+	_, page := f.get(t, "/")
+	seed, _ := page.Find("#status").Attr("hx-get")
+
+	f.addSession(t, "aaa", time.Date(2026, 3, 1, 12, 0, 0, 0, time.UTC), userMsg("hi"), userMsg("again"))
+	_, doc := f.get(t, seed)
+	if ids := arrivalIDs(doc); len(ids) != 0 {
+		t.Errorf("a grown session arrived: %v", ids)
+	}
+}
+
+// A tab left open across an upgrade polls with the count this used to
+// compare. It gets the indicator and no arrivals, rather than an error.
+func TestStatusIgnoresAnOldPoll(t *testing.T) {
+	f := newFixture(t, map[string][]string{"aaa": {userMsg("hi")}})
+	f.withIndexer(t, indexer.Status{Phase: indexer.PhaseWatching})
+	f.addSession(t, "bbb", time.Now(), userMsg("new"))
+
+	rec, doc := f.get(t, "/status?n=1")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d", rec.Code)
+	}
+	if ids := arrivalIDs(doc); len(ids) != 0 {
+		t.Errorf("arrivals without a watermark: %v", ids)
+	}
+	if got, _ := doc.Find("#status").Attr("hx-get"); got != "/status" {
+		t.Errorf("hx-get = %q", got)
 	}
 }
 
@@ -151,7 +236,9 @@ func TestStatusEmptyWithoutAnIndexer(t *testing.T) {
 	}
 }
 
-// The page has to seed the poll, or the indicator never starts.
+// The page has to seed the poll, or the indicator never starts, and has to
+// seed it with the newest arrival it rendered, or the first poll delivers
+// every session it already shows.
 func TestPageSeedsTheStatusPoll(t *testing.T) {
 	f := newFixture(t, map[string][]string{
 		"aaa": {userMsg("one")},
@@ -163,10 +250,30 @@ func TestPageSeedsTheStatusPoll(t *testing.T) {
 	if el.Length() != 1 {
 		t.Fatal("no status element on the page")
 	}
-	if got, _ := el.Attr("hx-get"); got != "/status?n=2" {
-		t.Errorf("hx-get = %q, want the rendered session count", got)
+	if got, _ := el.Attr("hx-get"); got != "/status?since=2" {
+		t.Errorf("hx-get = %q, want the last arrival", got)
 	}
 	if got, _ := el.Attr("hx-trigger"); got != "load" {
 		t.Errorf("hx-trigger = %q, want load", got)
+	}
+}
+
+// app.ts places arrivals only in the unfiltered list, and tells which list it
+// has by this attribute rather than the URL, which typing a search leaves
+// alone.
+func TestListMarksWhetherItIsBrowsing(t *testing.T) {
+	f := newFixture(t, map[string][]string{"aaa": {userMsg("the quicksand")}})
+
+	_, doc := f.get(t, "/")
+	if _, ok := doc.Find("#rows").Attr("data-browsing"); !ok {
+		t.Error("the unfiltered list is not marked data-browsing")
+	}
+	if doc.Find("#rows li[data-id=aaa]").Length() != 1 {
+		t.Error("rows carry no data-id for arrivals to be deduplicated against")
+	}
+
+	_, doc = f.htmxGet(t, "/search?q=quicksand")
+	if _, ok := doc.Find("#rows").Attr("data-browsing"); ok {
+		t.Error("search results are marked data-browsing")
 	}
 }

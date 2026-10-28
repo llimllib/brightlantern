@@ -59,6 +59,13 @@ func TestMarkupContractForKeyboardNavigation(t *testing.T) {
 		t.Error("no #rows container")
 	}
 
+	// Arrivals: placed by data-id and the row's <time>, into the list only
+	// when it is marked as browsing, with the note to say what is out of
+	// sight. status_test covers the attributes; this covers the note.
+	if doc.Find(".list .arrivals-note[hidden] button").Length() != 1 {
+		t.Error("no hidden .arrivals-note button in the list pane")
+	}
+
 	// scrollToMatch reads the target off this element.
 	if doc.Find("article.reading").Length() != 1 {
 		t.Error("no article.reading for the match scroll to read data-scroll-to from")

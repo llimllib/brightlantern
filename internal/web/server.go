@@ -101,6 +101,7 @@ func (s *Server) SetEngine(e *search.Engine) { s.engine.Store(e) }
 
 // funcs are the helpers templates may call.
 var funcs = template.FuncMap{
+	"rowItem": newRowItem,
 	// date renders a list-row date the way a mail client does: a time for
 	// today, a weekday within the last week, a date beyond that.
 	"date": func(t time.Time) string {
