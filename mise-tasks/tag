@@ -1,0 +1,59 @@
+#!/usr/bin/env bash
+#MISE description="Tag HEAD as the next version and push it, which starts the release"
+#
+# Pushing a v* tag is the whole trigger: release.yml builds, signs, notarizes
+# and publishes from it. So everything here happens before the push, which
+# is the step that cannot be taken back -- a published cask is public.
+#
+# The tag goes on HEAD, not on the working tree, so uncommitted changes are
+# not in it and do not need stashing. HEAD must be on origin/main, though:
+# the runner checks the tag out from GitHub.
+set -euo pipefail
+
+git fetch --quiet --tags origin
+
+head=$(git rev-parse HEAD)
+if [[ "$head" != "$(git rev-parse origin/main)" ]]; then
+  echo "tag: HEAD is not origin/main; push or pull first" >&2
+  exit 1
+fi
+
+current=$(git tag --list 'v[0-9]*.[0-9]*.[0-9]*' --sort=-v:refname | head -1)
+current=${current:-v0.0.0}
+IFS=. read -r major minor patch <<<"${current#v}"
+
+echo "current version: $current"
+echo "HEAD: $(git log -1 --format='%h %s')"
+
+# A tag on a commit CI has not passed is a release that might not build, and
+# the release runner is the slow way to find out.
+ci=$(gh run list --commit "$head" --workflow CI --limit 1 --json status,conclusion \
+  --jq '.[0] | if . == null then "none" elif .status != "completed" then .status else .conclusion end' \
+  2>/dev/null || echo "unknown")
+if [[ "$ci" != "success" ]]; then
+  echo "warning: CI for HEAD is $ci"
+fi
+
+echo
+echo "  1) patch  v$major.$minor.$((patch + 1))"
+echo "  2) minor  v$major.$((minor + 1)).0"
+echo "  3) major  v$((major + 1)).0.0"
+read -rp "bump [1/2/3]: " choice
+case "$choice" in
+  1 | patch) next="v$major.$minor.$((patch + 1))" ;;
+  2 | minor) next="v$major.$((minor + 1)).0" ;;
+  3 | major) next="v$((major + 1)).0.0" ;;
+  *) echo "tag: nothing chosen; no tag made" >&2; exit 1 ;;
+esac
+
+read -rp "tag $next on $(git rev-parse --short HEAD) and push it, starting the release? [y/N] " ok
+if [[ "$ok" != [yY]* ]]; then
+  echo "no tag made"
+  exit 1
+fi
+
+# Annotated, so the tag records when and by whom; the message is the
+# subject of the commit it marks.
+git tag -a "$next" -m "$next: $(git log -1 --format=%s)"
+git push origin "$next"
+echo "pushed $next; follow it with: gh run watch \$(gh run list --workflow Release --limit 1 --json databaseId --jq '.[0].databaseId')"
