@@ -22,7 +22,7 @@ import (
 	"github.com/llimllib/brightlantern/internal/web"
 )
 
-func runServe(dbPath, addr string, dirs []string, dev, launchBrowser, noWatch, wait bool, titlesVia string) error {
+func runServe(dbPath, addr string, dirs []string, dev, launchBrowser, noWatch, wait, lexical bool, titlesVia string) error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
@@ -97,7 +97,7 @@ func runServe(dbPath, addr string, dirs []string, dev, launchBrowser, noWatch, w
 
 	var bg closers
 	defer bg.close()
-	go warm(ctx, srv, status, &bg, dbPath, dirs, titlesVia)
+	go warm(ctx, srv, status, &bg, dbPath, dirs, lexical, titlesVia)
 
 	select {
 	case err := <-errc:
@@ -124,10 +124,17 @@ func runServe(dbPath, addr string, dirs []string, dev, launchBrowser, noWatch, w
 // the indexer only has to catch up with sessions written while it was down.
 //
 // A nil status means --no-watch: search still warms, nothing indexes.
+//
+// lexical keeps the model out entirely, for search and indexing both, as
+// --lexical does for index. The browser tests need it: they count the rows a
+// search leaves, and the semantic ranker returns neighbours with no
+// threshold, so with the model loaded every fixture matched every query.
 func warm(ctx context.Context, srv *web.Server, status *pendingStatus, bg *closers,
-	dbPath string, dirs []string, titlesVia string) {
+	dbPath string, dirs []string, lexical bool, titlesVia string) {
 	driver := index.DriverName
-	if err := index.RegisterSemanticDriver(embed.DefaultPaths()); err == nil {
+	if lexical {
+		// Keyword search, and new sessions indexed without vectors.
+	} else if err := index.RegisterSemanticDriver(embed.DefaultPaths()); err == nil {
 		stop := slowNote(2*time.Second, "loading the embedding model; search is keyword-only "+
 			"until it finishes. llama.cpp is compiling Metal shaders, which takes about "+
 			"15s the first time and is then cached")

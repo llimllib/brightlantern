@@ -51,7 +51,8 @@ flags:
                  settings file, or detected)
   --full         reindex everything rather than what changed
   --force        index even while a running server keeps the index current
-  --lexical      skip semantic indexing, even if the model is installed
+  --lexical      keyword search and indexing only, even if the model is
+                 installed
   --addr ADDR    serve on this address (default 127.0.0.1:5268)
   --dev          reload templates and static files from disk per request
   --open         open a browser once the server is listening
@@ -135,7 +136,7 @@ func main() {
 		if s, serr := resolve(givenFlags(fs), dirs, *dbPath, *addr); serr != nil {
 			err = serr
 		} else {
-			err = runServe(s.dbPath, s.addr, s.dirs, *dev, *openBrowser, *noWatch, *wait, s.titles)
+			err = runServe(s.dbPath, s.addr, s.dirs, *dev, *openBrowser, *noWatch, *wait, *lexical, s.titles)
 		}
 	case "index":
 		_ = fs.Parse(args)

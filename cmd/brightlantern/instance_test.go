@@ -57,7 +57,7 @@ func TestServeOnATakenPortTouchesNothing(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			dbPath := filepath.Join(t.TempDir(), "index.db")
-			err := runServe(dbPath, tc.addr(t), nil, false, false, false, false, "off")
+			err := runServe(dbPath, tc.addr(t), nil, false, false, false, false, false, "off")
 			if err == nil || !strings.Contains(err.Error(), tc.want) {
 				t.Fatalf("runServe() = %v; want an error containing %q", err, tc.want)
 			}
