@@ -110,8 +110,11 @@ test("an arrival between the top row and the cursor does not move the cursor", a
   page,
 }) => {
   await page.goto("/");
-  await page.keyboard.press("j");
+  // Focused directly rather than by pressing j: other tests' arrivals may
+  // already be above charlie, so bravo is not reliably the second row. The
+  // cursor is DOM focus, so this is the same state j would leave.
   const bravo = page.locator('a.row[href="/sessions/e2e-bravo"]');
+  await bravo.focus();
   await expect(bravo).toBeFocused();
   const before = await bravo.boundingBox();
 
