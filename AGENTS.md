@@ -764,6 +764,13 @@ whichever path produced it.
   `render.Tool` per call rebuilds the result map each time.
 - Messages are marked with a rule and `**[N] role**`, not a heading: the prose
   is markdown, and an assistant's own `## Findings` would read as a message.
+- **Colour only on a terminal** (`--color auto`, the default, which also
+  honours `NO_COLOR`), so a pipe -- an agent -- gets the plain text.
+  `--color always` outranks `NO_COLOR`, as in ripgrep. Matches
+  are coloured from `matches`, byte spans `markExcerpt` records, not by
+  finding `**` again: it leaves terms in code spans and already-bold text
+  unbolded, so the asterisks cannot say which words matched. A daemon
+  predating `matches` gets colour everywhere but on the matches.
 - Flags are parsed **interspersed** (`search xdist --limit 5`), which the
   flag package does not do; `--` ends them, for a query starting with a dash.
 

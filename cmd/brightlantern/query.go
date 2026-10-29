@@ -20,6 +20,7 @@ import (
 	"github.com/llimllib/brightlantern/internal/index"
 	"github.com/llimllib/brightlantern/internal/search"
 	"github.com/llimllib/brightlantern/internal/web"
+	"golang.org/x/sys/unix"
 )
 
 // queryTimeout bounds a request to a running server. A search is
@@ -33,6 +34,8 @@ type searchOptions struct {
 	sort    string
 	json    bool
 	lexical bool
+	// color is auto, always or never, as ripgrep's --color.
+	color string
 }
 
 // runSearch answers a query, from a running server when there is one for this
@@ -72,7 +75,35 @@ func runSearch(w io.Writer, dbPath, addr, query string, o searchOptions) error {
 	if o.json {
 		return printJSON(w, resp)
 	}
+	if width, ok := colorWidth(w, o.color); ok {
+		return resp.WriteColor(w, width)
+	}
 	return resp.WriteText(w)
+}
+
+// colorWidth reports whether to colour output to w, and the terminal's width
+// when it is one.
+//
+// auto colours only a terminal, so an agent reading a pipe gets exactly the
+// text it always did, and honours NO_COLOR and TERM=dumb as ripgrep does.
+func colorWidth(w io.Writer, mode string) (int, bool) {
+	width := 0
+	tty := false
+	if f, ok := w.(*os.File); ok {
+		if ws, err := unix.IoctlGetWinsize(int(f.Fd()), unix.TIOCGWINSZ); err == nil {
+			tty, width = true, int(ws.Col)
+		}
+	}
+	switch mode {
+	case "always":
+		return width, true
+	case "never":
+		return 0, false
+	}
+	if !tty || os.Getenv("NO_COLOR") != "" || os.Getenv("TERM") == "dumb" {
+		return 0, false
+	}
+	return width, true
 }
 
 // openSearch opens a reader for searching with no server to ask: the

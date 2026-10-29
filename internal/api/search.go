@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"io"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -94,6 +95,11 @@ type SearchResult struct {
 
 	// Excerpt is the best-matching passage, terms in **bold**.
 	Excerpt string `json:"excerpt"`
+	// Matches are the byte ranges of Excerpt that matched the query,
+	// excluding the bold around them. Every term is here, including those
+	// left unbolded for being in code or bold already, which is what lets a
+	// terminal colour them without guessing which asterisks are whose.
+	Matches []Span `json:"matches,omitempty"`
 	// Msg is the message that passage came from, which is where to start
 	// reading: `brightlantern show ID --around MSG`. -1 when unknown.
 	Msg int `json:"msg"`
@@ -142,7 +148,7 @@ func Search(ctx context.Context, db *index.DB, engine *search.Engine, req Search
 		if err != nil || ex == "" {
 			ex = res.BestText
 		}
-		r.Excerpt = markExcerpt(oneLine(ex, excerptRunes))
+		r.Excerpt, r.Matches = markExcerpt(oneLine(ex, excerptRunes))
 		if idx, err := search.ChunkMessage(ctx, db.SQL(), res.BestChunk); err == nil && idx >= 0 {
 			r.Msg = idx
 		} else if idxs, err := search.MessagesMatching(ctx, db.SQL(), res.ID, q, 1); err == nil && len(idxs) > 0 {
@@ -183,7 +189,44 @@ func HasSemantic(e *search.Engine) bool {
 // One block per session, and nothing that needs a terminal: this is as likely
 // to land in a model's context as on a screen, and ten results should cost a
 // few hundred tokens rather than a few thousand.
-func (r SearchResponse) WriteText(w io.Writer) error {
+func (r SearchResponse) WriteText(w io.Writer) error { return r.write(w, plain) }
+
+// WriteColor prints the same blocks for a terminal, coloured as ripgrep
+// colours its own: the session id where rg puts the path, since it is what
+// show takes; the message where rg puts the line number; matches in bold red,
+// not bold markdown. width wraps excerpts under their indent, so that a long
+// one does not run back to the margin and blur into the next result; 0 leaves
+// them to the terminal.
+func (r SearchResponse) WriteColor(w io.Writer, width int) error {
+	s := colors
+	s.width = width
+	return r.write(w, s)
+}
+
+// style is how write dresses each part of a result.
+type style struct {
+	title, id, msg, match, dim func(string) string
+	// color is whether excerpts show their matches by colour rather than by
+	// bold markdown.
+	color bool
+	width int
+}
+
+func same(s string) string { return s }
+
+func sgr(code string) func(string) string {
+	return func(s string) string { return "\x1b[" + code + "m" + s + "\x1b[0m" }
+}
+
+var (
+	plain  = style{title: same, id: same, msg: same, match: same, dim: same}
+	colors = style{title: sgr("1"), id: sgr("35"), msg: sgr("32"), match: sgr("1;31"), dim: sgr("2"), color: true}
+)
+
+// indent is what every line of a result after its title starts with.
+const indent = "   "
+
+func (r SearchResponse) write(w io.Writer, st style) error {
 	var b strings.Builder
 	if len(r.Results) == 0 {
 		b.WriteString("No sessions match that search.")
@@ -196,33 +239,138 @@ func (r SearchResponse) WriteText(w io.Writer) error {
 		if i > 0 {
 			b.WriteString("\n")
 		}
-		fmt.Fprintf(&b, "%d. %s\n", i+1, oneLine(res.Title, 160))
-		meta := []string{res.ID, res.Project, res.StartedAt.Local().Format("2006-01-02")}
+		fmt.Fprintf(&b, "%s %s\n", st.dim(fmt.Sprintf("%d.", i+1)), st.title(oneLine(res.Title, 160)))
+		meta := []string{st.id(res.ID), res.Project, res.StartedAt.Local().Format("2006-01-02")}
 		if res.Host != "" {
 			meta = append(meta, "on "+res.Host)
 		}
 		match := fmt.Sprintf("%d messages", res.Messages)
 		if res.Msg >= 0 {
-			match += fmt.Sprintf(", best match at message %d", res.Msg)
+			match += ", best match at message " + st.msg(strconv.Itoa(res.Msg))
 		}
 		meta = append(meta, match)
-		fmt.Fprintf(&b, "   %s\n", strings.Join(meta, " · "))
+		fmt.Fprintf(&b, "%s%s\n", indent, strings.Join(meta, st.dim(" · ")))
 		if res.Excerpt != "" {
-			fmt.Fprintf(&b, "   %s\n", res.Excerpt)
+			if st.color {
+				for _, line := range wrapMatches(res.Excerpt, res.Matches, st.width-len(indent)) {
+					fmt.Fprintf(&b, "%s%s\n", indent, line.render(st.match))
+				}
+			} else {
+				fmt.Fprintf(&b, "%s%s\n", indent, res.Excerpt)
+			}
 		}
 		if res.URL != "" {
-			fmt.Fprintf(&b, "   %s\n", res.URL)
+			fmt.Fprintf(&b, "%s%s\n", indent, st.dim(res.URL))
 		}
 	}
 	if !r.Semantic {
-		b.WriteString("\n(keyword search only: the embedding model is not loaded)\n")
+		b.WriteString("\n" + st.dim("(keyword search only: the embedding model is not loaded)") + "\n")
 	}
 	_, err := io.WriteString(w, b.String())
 	return err
 }
 
+// styledLine is a line of an excerpt, rune by rune, with whether each matched.
+type styledLine []styledRune
+
+type styledRune struct {
+	r  rune
+	hl bool
+}
+
+func (l styledLine) render(match func(string) string) string {
+	var b, run strings.Builder
+	hl := false
+	flush := func() {
+		if hl {
+			b.WriteString(match(run.String()))
+		} else {
+			b.WriteString(run.String())
+		}
+		run.Reset()
+	}
+	for _, c := range l {
+		if c.hl != hl {
+			flush()
+			hl = c.hl
+		}
+		run.WriteRune(c.r)
+	}
+	flush()
+	return b.String()
+}
+
+// wrapMatches lays an excerpt out for a terminal: the bold markExcerpt put
+// around each match taken off, since colour says it instead, and the words
+// filled into lines of width runes. width <= 0 is one line.
+//
+// The bold is recognised as a ** pair hugging a span exactly. That also takes
+// off a session's own bold around exactly one term, which a terminal would
+// not have rendered anyway. Spans out of order or out of range -- from a
+// server that is not this build -- are ignored rather than trusted.
+func wrapMatches(ex string, spans []Span, width int) []styledLine {
+	var runes styledLine
+	pos := 0
+	emit := func(s string, hl bool) {
+		for _, r := range s {
+			runes = append(runes, styledRune{r, hl})
+		}
+	}
+	for _, sp := range spans {
+		start, end := sp[0], sp[1]
+		if start < pos || end <= start || end > len(ex) {
+			continue
+		}
+		before, after := ex[pos:start], end
+		if strings.HasSuffix(before, bold) && strings.HasPrefix(ex[end:], bold) {
+			before = strings.TrimSuffix(before, bold)
+			after += len(bold)
+		}
+		emit(before, false)
+		emit(ex[start:end], true)
+		pos = after
+	}
+	emit(ex[pos:], false)
+
+	if width <= 0 {
+		return []styledLine{runes}
+	}
+	var lines []styledLine
+	var line styledLine
+	for len(runes) > 0 {
+		// The next word, and the space after it if there is one: oneLine left
+		// single spaces only.
+		n := 0
+		for n < len(runes) && runes[n].r != ' ' {
+			n++
+		}
+		word := runes[:n]
+		if n < len(runes) {
+			n++
+		}
+		runes = runes[n:]
+		if len(line) > 0 && len(line)+len(word) > width {
+			lines = append(lines, trimSpace(line))
+			line = nil
+		}
+		line = append(line, word...)
+		line = append(line, styledRune{' ', false})
+	}
+	return append(lines, trimSpace(line))
+}
+
+func trimSpace(l styledLine) styledLine {
+	for len(l) > 0 && l[len(l)-1].r == ' ' {
+		l = l[:len(l)-1]
+	}
+	return l
+}
+
+// Span is a half-open byte range, [start, end).
+type Span [2]int
+
 // markExcerpt replaces the sentinels with bold, except where the text is
-// bold already or is code.
+// bold already or is code, and returns where each marked term landed.
 //
 // Already bold means inside a ** pair of the session's own, or right against
 // one: a mark there would nest or double the emphasis rather than add any.
@@ -233,9 +381,11 @@ func (r SearchResponse) WriteText(w io.Writer) error {
 // parity cannot see; the adjacency test still keeps that from doubling, at
 // the cost of a stray ** that was in the text anyway. A mark the cut at
 // excerptRunes left open is closed, so it cannot embolden what follows.
-func markExcerpt(s string) string {
+func markExcerpt(s string) (string, []Span) {
 	var b strings.Builder
+	var spans []Span
 	inBold, inCode, marking := false, false, false
+	start := -1
 	for i := 0; i < len(s); {
 		switch {
 		case s[i] == '`':
@@ -257,7 +407,12 @@ func markExcerpt(s string) string {
 			if marking {
 				b.WriteString(bold)
 			}
+			start = b.Len()
 		case s[i] == markClose[0]:
+			if start >= 0 && b.Len() > start {
+				spans = append(spans, Span{start, b.Len()})
+			}
+			start = -1
 			if marking {
 				b.WriteString(bold)
 				marking = false
@@ -267,10 +422,13 @@ func markExcerpt(s string) string {
 		}
 		i++
 	}
+	if start >= 0 && b.Len() > start {
+		spans = append(spans, Span{start, b.Len()})
+	}
 	if marking {
 		b.WriteString(bold)
 	}
-	return b.String()
+	return b.String(), spans
 }
 
 // oneLine flattens whitespace and cuts to n runes.

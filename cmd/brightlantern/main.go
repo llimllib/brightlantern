@@ -67,6 +67,8 @@ search and show ask a running server for the same index, and open the
 index themselves when there is none:
   --limit N      search: how many sessions (default 10, at most 100)
   --sort new     search: newest first rather than by relevance
+  --color WHEN   search: auto (default: on a terminal, unless NO_COLOR
+                 is set), always, or never
   --around N     show: the messages around message N, as a search
                  result's "best match at message N"
   --from N       show: start at message N; negative counts from the end
@@ -120,6 +122,7 @@ func main() {
 	to := fs.Int("to", 0, "show: stop before this message")
 	tools := fs.String("tools", "", "show: brief, none or full")
 	asJSON := fs.Bool("json", false, "print JSON")
+	color := fs.String("color", "auto", "search: auto, always or never")
 	fs.Usage = func() { fmt.Fprintf(os.Stderr, usage, index.DefaultPath()) }
 
 	var err error
@@ -150,12 +153,18 @@ func main() {
 	case "search":
 		query := joinQuery(parseInterspersed(fs, args))
 		if query == "" {
-			fmt.Fprintln(os.Stderr, "usage: brightlantern search [--limit N] [--sort new] [--json] QUERY")
+			fmt.Fprintln(os.Stderr, "usage: brightlantern search [--limit N] [--sort new] [--color WHEN] [--json] QUERY")
+			os.Exit(2)
+		}
+		switch *color {
+		case "auto", "always", "never":
+		default:
+			fmt.Fprintln(os.Stderr, "--color must be auto, always or never")
 			os.Exit(2)
 		}
 		given := givenFlags(fs)
 		err = runSearch(os.Stdout, configuredDB(given, *dbPath), configuredAddr(given, *addr), query,
-			searchOptions{limit: *limit, sort: *sortBy, json: *asJSON, lexical: *lexical})
+			searchOptions{limit: *limit, sort: *sortBy, json: *asJSON, lexical: *lexical, color: *color})
 	case "show":
 		pos := parseInterspersed(fs, args)
 		if len(pos) != 1 {

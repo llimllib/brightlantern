@@ -169,3 +169,22 @@ func TestParseInterspersed(t *testing.T) {
 		}
 	}
 }
+
+func TestColorWidth(t *testing.T) {
+	var pipe strings.Builder
+	for _, tc := range []struct {
+		mode, noColor string
+		want          bool
+	}{
+		{"auto", "", false}, // not a terminal
+		{"never", "", false},
+		{"always", "", true},
+		// An explicit request outranks NO_COLOR, as in ripgrep.
+		{"always", "1", true},
+	} {
+		t.Setenv("NO_COLOR", tc.noColor)
+		if _, got := colorWidth(&pipe, tc.mode); got != tc.want {
+			t.Errorf("colorWidth(pipe, %q) with NO_COLOR=%q = %v, want %v", tc.mode, tc.noColor, got, tc.want)
+		}
+	}
+}
