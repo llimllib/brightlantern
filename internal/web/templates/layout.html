@@ -63,9 +63,33 @@
   {{- /* data-scroll-to rather than a #m12 URL fragment: a fragment would put
          a scroll position into every shared link, and fight both the history
          restore and the list pane's own saved position. */ -}}
+  <div class="reading-pane">
   <article class="reading"{{with .ScrollTo}} data-scroll-to="{{.}}"{{end}}>
     {{- template "transcript.html" . }}
   </article>
+
+  {{- /* The app's cmd-F bar (app.ts, find.swift). Beneath the reading pane
+         and as wide as it, rather than across the window, because what it
+         searches is this session and not the list: under the search box at
+         the top it read as a second way to search everything. A sibling of
+         the pane rather than inside it, so it is not itself searched and
+         never covers the transcript's last lines. Hidden until the app opens
+         it; in a browser, cmd-F is the browser's. */}}
+  <div class="findbar" role="search" aria-label="Find in this session" hidden>
+    <span class="findbar-count" aria-live="polite"></span>
+    <span class="findbar-steps">
+      <button type="button" class="findbar-prev" title="Previous match (⇧⌘G)" aria-label="Previous match">
+        <svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true"><path d="M10 3 5 8l5 5"/></svg>
+      </button>
+      <button type="button" class="findbar-next" title="Next match (⌘G)" aria-label="Next match">
+        <svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true"><path d="m6 3 5 5-5 5"/></svg>
+      </button>
+    </span>
+    <input type="search" class="findbar-input" placeholder="Find in this session"
+           aria-label="Find in this session" autocomplete="off" spellcheck="false">
+    <button type="button" class="findbar-done">Done</button>
+  </div>
+  </div>
 </main>
 
 {{- /* Native <dialog>: modal behaviour, focus trapping, and Escape all come

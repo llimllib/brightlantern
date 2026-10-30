@@ -55,7 +55,7 @@ plutil -replace CFBundleShortVersionString -string "$version" "$contents/Info.pl
 cp "$src/org.billmill.brightlantern.plist" "$contents/Library/LaunchAgents/"
 
 swiftc -O -target arm64-apple-macos26.0 -o "$contents/MacOS/brightlantern-app" \
-  "$src/main.swift" "$src/menu.swift" "$src/address.swift" "$src/startup.swift" \
+  "$src/main.swift" "$src/menu.swift" "$src/find.swift" "$src/address.swift" "$src/startup.swift" \
   "$src/agent.swift" "$src/register.swift" "$src/log.swift"
 cp "$BRIGHTLANTERN_DATA_DIR/brightlantern-apple" "$BRIGHTLANTERN_DATA_DIR/lembed0.dylib" "$contents/MacOS/"
 cp "$BRIGHTLANTERN_DATA_DIR/all-MiniLM-L6-v2.Q8_0.gguf" "$contents/Resources/"

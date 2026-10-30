@@ -445,6 +445,458 @@ function flash(button: HTMLButtonElement, cls: string, label: string): void {
   );
 }
 
+// ------------------------------------------------------------ find in page
+
+/**
+ * Find in this session: the app's cmd-F, in a bar at the foot of the reading
+ * pane. The app's menu calls open, next, previous and useSelection by name
+ * (find.swift); everything else, the bar included, is here.
+ *
+ * WebKit's own find cannot be pointed at one element, so it matched the
+ * session list as well, and it scrolled only the document, which never
+ * scrolls here: the reading pane does. So matching is done here, in the
+ * reading pane alone, drawn with the CSS Custom Highlight API, which marks
+ * ranges without touching the DOM the transcript is made of.
+ *
+ * Only text you can read matches: an opened tool call's output does, a
+ * collapsed one's does not. Nor does any tool call's summary line, which is
+ * cut off with an ellipsis -- its text is all in the DOM and counts as
+ * visible, so a match could land past the "…" where nobody can see it.
+ * Expanding a call on a hit would not rescue those: its output is fetched
+ * when it opens, so only the clipped summary could ever have matched.
+ */
+
+// Safari stops at 1000 too. A one-letter query in a long session would
+// otherwise build tens of thousands of ranges per keystroke.
+const findLimit = 1000;
+
+interface FindResult {
+  /** 1-based; 0 when nothing matched. */
+  current: number;
+  total: number;
+  /** True when there were more than `total`. */
+  more: boolean;
+}
+
+let findQuery = "";
+let findMatches: Range[] = [];
+let findIndex = -1;
+let findMore = false;
+// Set when the pane changes under a search -- a tool's output arriving, a
+// <details> opening -- so the next step searches again instead of walking
+// ranges that no longer cover what is on screen.
+let findStale = false;
+let findObserver: MutationObserver | undefined;
+
+const readingPane = () => document.querySelector<HTMLElement>(".reading");
+
+function findResult(): FindResult {
+  return {
+    current: findIndex + 1,
+    total: findMatches.length,
+    more: findMore,
+  };
+}
+
+/**
+ * The pane's rendered text as one string, with where each text node starts
+ * in it. Text in different blocks is joined with a newline, so a paragraph
+ * ending "foo" and the next starting "bar" do not match "foobar".
+ */
+function paneText(pane: HTMLElement): { text: string; nodes: Text[]; starts: number[] } {
+  const visible = new Map<Element, boolean>();
+  const blocks = new Map<Element, Element>();
+  const blockOf = (el: Element): Element => {
+    let block = blocks.get(el);
+    if (!block) {
+      block =
+        el === pane || !getComputedStyle(el).display.startsWith("inline")
+          ? el
+          : blockOf(el.parentElement ?? pane);
+      blocks.set(el, block);
+    }
+    return block;
+  };
+
+  const nodes: Text[] = [];
+  const starts: number[] = [];
+  let text = "";
+  let lastBlock: Element | undefined;
+  const walker = document.createTreeWalker(pane, NodeFilter.SHOW_TEXT);
+  for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+    const node = n as Text;
+    const parent = node.parentElement;
+    if (!parent || !node.data) continue;
+    let shown = visible.get(parent);
+    if (shown === undefined) {
+      shown = parent.checkVisibility() && !parent.closest("summary");
+      visible.set(parent, shown);
+    }
+    if (!shown) continue;
+
+    const block = blockOf(parent);
+    if (lastBlock && block !== lastBlock) text += "\n";
+    lastBlock = block;
+    nodes.push(node);
+    starts.push(text.length);
+    text += node.data;
+  }
+  return { text, nodes, starts };
+}
+
+/** The node holding character `pos`, by binary search over the starts. */
+function nodeAt(starts: number[], pos: number): number {
+  let lo = 0;
+  let hi = starts.length - 1;
+  while (lo < hi) {
+    const mid = (lo + hi + 1) >> 1;
+    if ((starts[mid] ?? 0) <= pos) lo = mid;
+    else hi = mid - 1;
+  }
+  return lo;
+}
+
+function escapeRegExp(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/**
+ * Every match of `query` in the pane, as live ranges. A regular expression
+ * rather than lowercasing both sides, because lowercasing can change a
+ * string's length and every offset after it.
+ */
+function collectMatches(pane: HTMLElement, query: string): Range[] {
+  const { text, nodes, starts } = paneText(pane);
+  const pattern = new RegExp(escapeRegExp(query), "giu");
+  const ranges: Range[] = [];
+  findMore = false;
+  for (const m of text.matchAll(pattern)) {
+    if (ranges.length === findLimit) {
+      findMore = true;
+      break;
+    }
+    const start = m.index;
+    const end = start + m[0].length;
+    const a = nodeAt(starts, start);
+    // end - 1: the node holding the last character, not the one after it.
+    const b = nodeAt(starts, end - 1);
+    const startNode = nodes[a];
+    const endNode = nodes[b];
+    if (!startNode || !endNode) continue;
+    const range = document.createRange();
+    range.setStart(startNode, start - (starts[a] ?? 0));
+    range.setEnd(endNode, end - (starts[b] ?? 0));
+    ranges.push(range);
+  }
+  return ranges;
+}
+
+/**
+ * Where a search starts: at the old current match while typing, so adding a
+ * letter keeps the place when it can, as Safari does; otherwise at the first
+ * match not above what is on screen.
+ */
+function startingIndex(pane: HTMLElement, anchor: Range | undefined): number {
+  if (findMatches.length === 0) return -1;
+  if (anchor) {
+    const i = findMatches.findIndex(
+      (r) => r.compareBoundaryPoints(Range.START_TO_START, anchor) >= 0,
+    );
+    return i === -1 ? 0 : i;
+  }
+  const top = pane.getBoundingClientRect().top;
+  const i = findMatches.findIndex((r) => r.getBoundingClientRect().bottom >= top);
+  return i === -1 ? 0 : i;
+}
+
+function scrollable(overflow: string): boolean {
+  return overflow === "auto" || overflow === "scroll";
+}
+
+/**
+ * Scrolls every box between the match and the page until it shows: a code
+ * block's own horizontal scroll first, then the pane. Centred, as Safari
+ * does, but only when it is not already in view.
+ */
+function revealRange(range: Range): void {
+  for (let el = range.startContainer.parentElement; el; el = el.parentElement) {
+    const style = getComputedStyle(el);
+    const box = el.getBoundingClientRect();
+    const r = range.getBoundingClientRect();
+    if (scrollable(style.overflowY) && el.scrollHeight > el.clientHeight) {
+      if (r.top < box.top || r.bottom > box.bottom) {
+        el.scrollTop += r.top - box.top - (el.clientHeight - r.height) / 2;
+      }
+    }
+    if (scrollable(style.overflowX) && el.scrollWidth > el.clientWidth) {
+      if (r.left < box.left || r.right > box.right) {
+        el.scrollLeft += r.left - box.left - (el.clientWidth - r.width) / 2;
+      }
+    }
+  }
+}
+
+/**
+ * The two highlights are registered once and changed in place, never
+ * replaced. WebKit repaints a range added to or removed from a registered
+ * highlight, but not the ranges of one swapped into the registry: cmd-G
+ * between two matches already on screen moved the current match and left
+ * the old one painted, until something else -- a scroll, the status poll --
+ * happened to redraw.
+ */
+let findAll: Highlight | undefined;
+let findCurrent: Highlight | undefined;
+
+function findHighlights(): [Highlight, Highlight] {
+  if (!findAll || !findCurrent) {
+    findAll = new Highlight();
+    findCurrent = new Highlight();
+    CSS.highlights.set("find", findAll);
+    CSS.highlights.set("find-current", findCurrent);
+  }
+  return [findAll, findCurrent];
+}
+
+/**
+ * Makes WebKit repaint all of `el`. Changing a highlight repaints only the
+ * height of the glyphs, while its background fills the line, so a match that
+ * stopped being current kept a band of the current colour along its top.
+ * Opacity is a change WebKit repaints the whole box for, and 0.999 is not a
+ * change anyone can see; it is taken off again two frames later.
+ */
+function repaint(el: Element | null | undefined): void {
+  if (!el) return;
+  el.classList.add("find-repaint");
+  requestAnimationFrame(() =>
+    requestAnimationFrame(() => el.classList.remove("find-repaint")),
+  );
+}
+
+/** The paragraph, list item, heading or code block a match sits in. */
+function blockAround(range: Range | undefined): Element | null | undefined {
+  const node = range?.commonAncestorContainer;
+  const el = node instanceof Element ? node : node?.parentElement;
+  return el?.closest("p, li, pre, td, th, h1, h2, h3, h4, h5, h6, blockquote, dt, dd") ?? el;
+}
+
+/** Every match afresh, for a new search. */
+function paintMatches(): void {
+  const [all, current] = findHighlights();
+  all.clear();
+  current.clear();
+  findMatches.forEach((r, i) => (i === findIndex ? current : all).add(r));
+  // Matches the last keystroke had and this one does not are anywhere on
+  // screen, so the whole pane.
+  repaint(readingPane());
+}
+
+/** One match handing over to the next: two ranges change, not a thousand. */
+function moveCurrent(from: number, to: number): void {
+  const [all, current] = findHighlights();
+  const before = findMatches[from];
+  const after = findMatches[to];
+  current.clear();
+  if (before) all.add(before);
+  if (after) {
+    all.delete(after);
+    current.add(after);
+  }
+  repaint(blockAround(before));
+  repaint(blockAround(after));
+}
+
+function runFind(query: string, anchor: Range | undefined): FindResult {
+  const pane = readingPane();
+  findQuery = query;
+  findStale = false;
+  findMatches = pane && query ? collectMatches(pane, query) : [];
+  findIndex = pane ? startingIndex(pane, anchor) : -1;
+
+  if (pane && !findObserver) {
+    findObserver = new MutationObserver(() => {
+      findStale = true;
+    });
+    findObserver.observe(pane, {
+      subtree: true,
+      childList: true,
+      characterData: true,
+      attributes: true,
+      attributeFilter: ["open"],
+    });
+  }
+
+  paintMatches();
+  const current = findMatches[findIndex];
+  if (current) revealRange(current);
+  return findResult();
+}
+
+/** Closing the bar leaves the current match selected, as Safari does. */
+function clearFind(): void {
+  const current = findMatches[findIndex];
+  findAll?.clear();
+  findCurrent?.clear();
+  repaint(readingPane());
+  if (current) {
+    const selection = window.getSelection();
+    selection?.removeAllRanges();
+    selection?.addRange(current);
+  }
+  findMatches = [];
+  findIndex = -1;
+}
+
+const findBar = () => document.querySelector<HTMLElement>(".findbar");
+const findInput = () => document.querySelector<HTMLInputElement>(".findbar-input");
+const findBarOpen = () => findBar()?.hidden === false;
+
+// Safari's wording, with its 1000 cap: past it the count says so rather than
+// claiming an exact number.
+function matchCount(r: FindResult): string {
+  if (!findQuery) return "";
+  if (r.total === 0) return "Not found";
+  if (r.total === 1 && !r.more) return "1 match";
+  return `${r.current} of ${r.more ? `more than ${r.total}` : r.total} matches`;
+}
+
+function showCount(r: FindResult): FindResult {
+  const count = document.querySelector(".findbar-count");
+  if (count) count.textContent = matchCount(r);
+  for (const b of document.querySelectorAll<HTMLButtonElement>(".findbar-steps button")) {
+    b.disabled = r.total === 0;
+  }
+  return r;
+}
+
+/**
+ * Opening another session is a page load, which would close the bar and lose
+ * its query; Safari keeps both. So they are kept per tab, like the list's
+ * scroll position, and put back when the next page starts.
+ */
+const findKey = "brightlantern-find";
+
+interface SavedFind {
+  open: boolean;
+  query: string;
+}
+
+function saveFind(): void {
+  const saved: SavedFind = { open: findBarOpen(), query: findInput()?.value ?? "" };
+  try {
+    sessionStorage.setItem(findKey, JSON.stringify(saved));
+  } catch {
+    // Storage refused: the bar just closes on the next page.
+  }
+}
+
+function restoreFind(): void {
+  const bar = findBar();
+  const input = findInput();
+  if (!bar || !input) return;
+  let saved: SavedFind | null = null;
+  try {
+    saved = JSON.parse(sessionStorage.getItem(findKey) ?? "null") as SavedFind | null;
+  } catch {
+    return;
+  }
+  if (!saved) return;
+  input.value = saved.query;
+  // Without focus: what was clicked to get here was the list, and keys
+  // should go on going there.
+  if (saved.open) {
+    bar.hidden = false;
+    find.search(saved.query);
+  }
+}
+
+const find = {
+  search(query: string): FindResult {
+    return showCount(runFind(query, findMatches[findIndex]));
+  },
+
+  step(delta: number): FindResult {
+    if (findStale) {
+      // Back to the current match, or the first after it if it has gone,
+      // then on from there: a step after the pane changed still moves.
+      runFind(findQuery, findMatches[findIndex]);
+    }
+    const n = findMatches.length;
+    if (n === 0) return showCount(findResult());
+    const from = findIndex;
+    findIndex = (((findIndex + delta) % n) + n) % n;
+    moveCurrent(from, findIndex);
+    const current = findMatches[findIndex];
+    if (current) revealRange(current);
+    return showCount(findResult());
+  },
+
+  /** cmd-F. Again with the bar open, it selects the query to type over. */
+  open(): void {
+    const bar = findBar();
+    const input = findInput();
+    if (!bar || !input) return;
+    if (bar.hidden) {
+      bar.hidden = false;
+      find.search(input.value);
+      saveFind();
+    }
+    input.focus();
+    input.select();
+  },
+
+  close(): void {
+    const bar = findBar();
+    if (!bar || bar.hidden) return;
+    bar.hidden = true;
+    findInput()?.blur();
+    clearFind();
+    saveFind();
+  },
+
+  /** cmd-G. With nothing to find yet, it opens the bar to ask. */
+  next(): void {
+    if (findBarOpen() && findInput()?.value) find.step(1);
+    else find.open();
+  },
+
+  previous(): void {
+    if (findBarOpen() && findInput()?.value) find.step(-1);
+    else find.open();
+  },
+
+  /** cmd-E: the selection becomes the query, without opening the bar. */
+  useSelection(): void {
+    const text = window.getSelection()?.toString() ?? "";
+    const input = findInput();
+    if (!text || !input) return;
+    input.value = text;
+    saveFind();
+    if (findBarOpen()) find.search(text);
+  },
+};
+
+function bindFindBar(): void {
+  const input = findInput();
+  input?.addEventListener("input", () => {
+    find.search(input.value);
+    saveFind();
+  });
+  // Return and shift-Return step, Escape closes: Safari's keys.
+  input?.addEventListener("keydown", (event) => {
+    if (event.isComposing) return;
+    if (event.key === "Enter") {
+      event.preventDefault();
+      find.step(event.shiftKey ? -1 : 1);
+    } else if (event.key === "Escape") {
+      event.preventDefault();
+      find.close();
+    }
+  });
+  document.querySelector(".findbar-prev")?.addEventListener("click", () => find.step(-1));
+  document.querySelector(".findbar-next")?.addEventListener("click", () => find.step(1));
+  document.querySelector(".findbar-done")?.addEventListener("click", () => find.close());
+}
+
 // ------------------------------------------------------------------ bindings
 
 // gg, as in vim: g is a prefix, and only a second g within the timeout acts.
@@ -533,6 +985,12 @@ function onKeydown(event: KeyboardEvent): void {
 function init(): void {
   restoreScroll();
   scrollToMatch();
+
+  // A global because the app reaches it by name. Harmless in a browser,
+  // whose own cmd-F never calls it, so the bar never opens there.
+  Object.assign(window, { brightlanternFind: find });
+  bindFindBar();
+  restoreFind();
 
   document.addEventListener("keydown", onKeydown);
 

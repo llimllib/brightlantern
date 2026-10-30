@@ -42,6 +42,18 @@ func mainMenu(target: AppDelegate) -> NSMenu {
     edit.addItem(item("Copy", #selector(NSText.copy(_:)), "c"))
     edit.addItem(item("Paste", #selector(NSText.paste(_:)), "v"))
     edit.addItem(item("Select All", #selector(NSText.selectAll(_:)), "a"))
+    edit.addItem(.separator())
+    // Safari's Find submenu, less Jump to Selection. Targeted, unlike the
+    // rest of Edit: the page does the finding whatever has focus, the find
+    // bar's own field included. See find.swift.
+    let find = NSMenu(title: "Find")
+    let findHolder = NSMenuItem(title: "Find", action: nil, keyEquivalent: "")
+    findHolder.submenu = find
+    edit.addItem(findHolder)
+    find.addItem(item("Find…", #selector(AppDelegate.showFind(_:)), "f", target: target))
+    find.addItem(item("Find Next", #selector(AppDelegate.findNext(_:)), "g", target: target))
+    find.addItem(item("Find Previous", #selector(AppDelegate.findPrevious(_:)), "g", [.command, .shift], target: target))
+    find.addItem(item("Use Selection for Find", #selector(AppDelegate.useSelectionForFind(_:)), "e", target: target))
 
     let view = submenu(of: bar, titled: "View")
     view.addItem(item("Reload Page", #selector(AppDelegate.reloadPage(_:)), "r", target: target))

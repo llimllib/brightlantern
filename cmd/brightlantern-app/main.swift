@@ -162,6 +162,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate {
         NSApplication.shared.orderFrontStandardAboutPanel(options: [.credits: aboutCredits()])
     }
 
+    // MARK: Edit menu
+
+    @objc func showFind(_ sender: Any?) { pageFind(web, "open") }
+    @objc func findNext(_ sender: Any?) { pageFind(web, "next") }
+    @objc func findPrevious(_ sender: Any?) { pageFind(web, "previous") }
+    @objc func useSelectionForFind(_ sender: Any?) { pageFind(web, "useSelection") }
+
     // MARK: View menu
 
     // reload() alone would reload a startup page, or nothing at all after a

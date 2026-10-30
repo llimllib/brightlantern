@@ -173,6 +173,17 @@ body {
   overscroll-behavior: contain;
 }
 
+/* The reading pane and the find bar beneath it, as one grid column. The bar
+   takes its height from the pane rather than covering its last lines. */
+.reading-pane {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;
+}
+
+.reading-pane > .reading { flex: 1; }
+
 .list {
   border-right: 1px solid var(--border);
   background: var(--bg-sunken);
@@ -780,3 +791,98 @@ kbd {
   background: var(--bg-sunken);
   color: var(--fg);
 }
+
+/* ---------- find in this session ---------- */
+
+/* Laid out like Safari's find bar, at the foot of the session it searches. */
+.findbar {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-xs);
+  padding: var(--space-2xs) var(--space-sm);
+  border-top: 1px solid var(--border);
+  background: var(--bg-sunken);
+  font-size: var(--text-sm);
+}
+
+.findbar[hidden] { display: none; }
+
+.findbar-count {
+  color: var(--fg-muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.findbar-steps {
+  display: inline-flex;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+.findbar-steps button,
+.findbar-done {
+  font: inherit;
+  color: var(--fg);
+  background: var(--bg-raised);
+  border: 0;
+  cursor: pointer;
+}
+
+.findbar-steps button {
+  display: grid;
+  place-items: center;
+  padding: var(--space-3xs) var(--space-xs);
+}
+
+.findbar-steps button + button { border-left: 1px solid var(--border); }
+
+.findbar-steps svg {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.75;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.findbar-steps button:disabled { color: var(--fg-faint); cursor: default; }
+
+.findbar-input {
+  width: min(18rem, 40vw);
+  font: inherit;
+  padding: var(--space-3xs) var(--space-xs);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg);
+  color: var(--fg);
+}
+
+.findbar-input:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -1px;
+}
+
+.findbar-done {
+  padding: var(--space-3xs) var(--space-sm);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.findbar-steps button:hover:not(:disabled),
+.findbar-done:hover { background: var(--bg-sunken); }
+
+/* Matches: every one tinted, the current one in Safari's solid yellow,
+   which reads on either scheme because it brings its own dark text. */
+::highlight(find) {
+  background-color: light-dark(rgb(255 214 0 / 0.35), rgb(255 214 0 / 0.3));
+}
+
+::highlight(find-current) {
+  background-color: #ffd60a;
+  color: #000;
+}
+
+/* Forces WebKit to repaint a whole block after a highlight moves; app.ts
+   says why. Removed two frames after it is added. */
+.find-repaint { opacity: 0.999; }
